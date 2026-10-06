@@ -46,12 +46,12 @@ func _ready() -> void:
 	close.tapped.connect(func() -> void: closed.emit())
 	add_child(close)
 	_label("Vanskelighet", Vector2(150, 560))
-	_lett = _button("Lett", Rect2(150, 630, 360, 120))
-	_vanlig = _button("Vanlig", Rect2(570, 630, 360, 120))
+	_lett = _button("Lett", Rect2(150, 620, 360, 140))
+	_vanlig = _button("Vanlig", Rect2(570, 620, 360, 140))
 	_lett.pressed.connect(func() -> void: _set_easy(true))
 	_vanlig.pressed.connect(func() -> void: _set_easy(false))
 	_label("Lyd", Vector2(150, 820))
-	_sound = _button("", Rect2(570, 790, 360, 120))
+	_sound = _button("", Rect2(570, 780, 360, 140))
 	_sound.pressed.connect(
 		func() -> void:
 			OrbFence.set_sfx_on(not OrbFence.sfx_on)
@@ -65,7 +65,7 @@ func _ready() -> void:
 			OrbFence.save_game()
 			sfx_preview.emit()
 	)
-	_music = _button("", Rect2(570, 1060, 360, 120))
+	_music = _button("", Rect2(570, 1050, 360, 140))
 	_music.pressed.connect(
 		func() -> void:
 			OrbFence.set_music_on(not OrbFence.music_on)
@@ -75,7 +75,7 @@ func _ready() -> void:
 	_music_slider.value_changed.connect(func(v: float) -> void: OrbFence.set_music_volume(v, false))
 	_music_slider.drag_ended.connect(func(_changed: bool) -> void: OrbFence.save_game())
 	_label("Mindre bevegelse", Vector2(150, 1380))
-	_motion = _button("", Rect2(570, 1350, 360, 120))
+	_motion = _button("", Rect2(570, 1340, 360, 140))
 	_motion.pressed.connect(
 		func() -> void:
 			OrbFence.set_less_motion(not OrbFence.less_motion)

@@ -106,6 +106,11 @@ func _disc(icon_name: String, c: Vector2, r: float, f: Color) -> OfDisc:
 func show_card(picture: Texture2D, has_next: bool) -> void:
 	_pic.texture = picture
 	_next.visible = has_next
+	# Without a next disc, replay and map sit centred as a pair.
+	var replay_x: float = 270.0 if has_next else 360.0
+	var map_x: float = 540.0 if has_next else 720.0
+	_replay.position.x = replay_x - _replay.size.x * 0.5
+	_map.position.x = map_x - _map.size.x * 0.5
 	_t = 0.0
 	visible = true
 	modulate.a = 1.0 if less_motion else 0.0

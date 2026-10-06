@@ -107,16 +107,19 @@ func _layout() -> void:
 
 
 ## Home disc and gear move below a camera cutout; their touch areas still run
-## to the screen corner (copied from ball-connect 7ad7d50). The HUD row
-## moves down too, but only into the spare sky above the bottom-anchored
-## field, so it never covers the frame on a 16:9 screen.
+## to the screen corner (copied from ball-connect 7ad7d50). The home touch
+## area stops at the field's top edge, so a touch in the field never arms
+## the home disc; it stays at least HOME_HIT tall. The HUD row moves down
+## too, but only into the spare sky above the bottom-anchored field, so it
+## never covers the frame on a 16:9 screen.
 func apply_safe_area() -> void:
 	var dy: float = maxf(0.0, safe_top_inset() - TOP_ROW_CLEAR)
+	var vs: Vector2 = get_viewport().get_visible_rect().size
+	var field_top: float = vs.y - OfBalance.DESIGN_H + OfBalance.FIELD_ORIGIN.y
 	home.position = Vector2.ZERO
-	home.size = Vector2(HOME_HIT, HOME_HIT + dy)
+	home.size = Vector2(HOME_HIT, maxf(HOME_HIT, minf(HOME_HIT + dy, field_top)))
 	home.disc_center = Vector2(104.0, 104.0 + dy)
 	home.queue_redraw()
-	var vs: Vector2 = get_viewport().get_visible_rect().size
 	var hud_dy: float = minf(dy, maxf(0.0, vs.y - OfBalance.DESIGN_H) + 8.0)
 	top_frame.position = Vector2((vs.x - OfBalance.DESIGN_W) * 0.5, hud_dy)
 	map.set_safe_dy(dy, center_frame.position)

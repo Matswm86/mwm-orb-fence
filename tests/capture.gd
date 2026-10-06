@@ -17,6 +17,7 @@ extends Node
 
 var out_dir: String = OS.get_environment("CAPTURE_DIR")
 var main: OfMain
+var _fails: int = 0
 
 
 func _ready() -> void:
@@ -40,25 +41,51 @@ func _ready() -> void:
 			await _phase_shell()
 		_:
 			await _phase_shots()
-	print("CAPTURE DONE in %.1f s" % ((Time.get_ticks_msec() - t0) / 1000.0))
+	print(
+		(
+			"CAPTURE DONE in %.1f s, checks failed: %d"
+			% [(Time.get_ticks_msec() - t0) / 1000.0, _fails]
+		)
+	)
 	Engine.time_scale = 1.0
-	get_tree().quit()
+	get_tree().quit(1 if _fails > 0 else 0)
+
+
+func _check(what: String, ok: bool) -> void:
+	print(("CHECK ok   " if ok else "CHECK FAIL ") + what)
+	if not ok:
+		_fails += 1
 
 
 func _phase_shots() -> void:
 	var play: OfPlay = main.play
 	print("first launch opened screen=%s level=%d" % [main.screen, play.level_id])
-	await _wait_s(1.9)
+	_check("level 1 starts with up-down chosen", play.buttons.chosen == 0)
+	# The hand runs through press loops on its own: it must never change the
+	# chosen direction (QA 2026-10-06 finding 1).
+	var flipped: bool = false
+	var start: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - start < 1900:
+		await get_tree().process_frame
+		flipped = flipped or play.buttons.chosen != 0
 	await _shot("01_level1_start_hand")
 	print("hand visible=%s at %s" % [play.fx.hand_visible, play.fx.hand_at])
+	_check("hand runs on level 1 start", play.fx.hand_visible)
+	_check("hand line is up-down", bool(play._hand_line.get("vertical", false)))
+	_check("hand alone never changed the direction (1.9 s)", not flipped)
+	await _dir_sticks_test(play)
 	await _touch_test(play)
-	# Level 1 gameplay after a couple of walls.
+	# Level 1 gameplay: shot while the first wall grows, before it can clear
+	# the level (one wall can clear level 1).
 	main.open_level(1)
 	play.autopilot = true
-	await _until(func() -> bool: return play.sim.walls_done >= 1 and play.sim.wall != null, 20.0)
-	await _wait_game(0.18)
+	await _until(func() -> bool: return play.sim.wall != null and play.sim.wall.age > 0.12, 20.0)
 	play.autopilot = false
 	await _shot("03_level1_gameplay")
+	_check(
+		"03 shows gameplay (state PLAY, no win card)",
+		play.sim.state == OfSim.State.PLAY and not play.card_visible()
+	)
 	# Level 3 mid-capture (hero scene, world1_mock.png): about a third
 	# captured, a wall growing, Snegl tokens out.
 	await _hero_level3(play)
@@ -138,10 +165,31 @@ func _phase_shots() -> void:
 	print("pause: paused=%s -> after tap paused=%s" % [was_paused, play.paused])
 
 
+## Regression for QA finding 1: while the onboarding hand runs, the child
+## taps side-side; the choice must hold for at least 1 s and the hand stops.
+func _dir_sticks_test(play: OfPlay) -> void:
+	_touch(1, OfBalance.DIR_CENTERS[1], true)
+	await _frames(3)
+	_touch(1, OfBalance.DIR_CENTERS[1], false)
+	await _frames(2)
+	_check("side-side tap chooses side-side", play.buttons.chosen == 1)
+	var held: bool = true
+	var start: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - start < 1300:
+		await get_tree().process_frame
+		held = held and play.buttons.chosen == 1
+	_check("side-side choice sticks for 1.3 s after the tap", held)
+	_check("hand stopped after the direction tap", not play.fx.hand_visible)
+	# Back to up-down so 02a/02b show a real turn.
+	play.buttons.chosen = 0
+	await _frames(2)
+
+
 ## A real touch through Input: press in the field, hold (ghost), drag one
 ## cell, tap the side-side button with a second finger (ghost turns),
 ## release (wall starts). Then a touch in the wrist strip does nothing.
 func _touch_test(play: OfPlay) -> void:
+	_check("02a starts from up-down", play.buttons.chosen == 0)
 	var p := Vector2(540, 900)
 	_touch(0, p, true)
 	await _frames(4)
@@ -157,6 +205,7 @@ func _touch_test(play: OfPlay) -> void:
 		)
 	)
 	await _shot("02a_ghost_updown")
+	_check("02a ghost is vertical", play.fx.ghost_vertical)
 	_touch(1, OfBalance.DIR_CENTERS[1], true)
 	await _frames(3)
 	_touch(1, OfBalance.DIR_CENTERS[1], false)
@@ -168,6 +217,7 @@ func _touch_test(play: OfPlay) -> void:
 		)
 	)
 	await _shot("02b_ghost_turned_sideside")
+	_check("02b ghost turned horizontal", not play.fx.ghost_vertical)
 	var walls0: int = play.sim.walls_started
 	_touch(0, p, false)
 	await _frames(6)
@@ -227,6 +277,32 @@ func _phase_inset() -> void:
 	await _wait_s(1.4)
 	await _shot("12_inset_play")
 	print("home disc centre %s, hit size %s" % [main.home.disc_center, main.home.size])
+	var field_top: float = main.bottom_frame.position.y + OfBalance.FIELD_ORIGIN.y
+	_check(
+		"home hit stays >= 200 px and above the field top (%.0f)" % field_top,
+		main.home.size.x >= 200.0 and main.home.size.y >= 200.0 and main.home.size.y <= field_top
+	)
+	# QA finding 2: a touch in field cells c0-c2 just under the cutout starts
+	# a wall but must not arm the home guard; a second tap must not leave.
+	var play: OfPlay = main.play
+	var spot := Vector2(150, 285)
+	var walls0: int = play.sim.walls_started
+	_touch(0, spot, true)
+	await _frames(3)
+	_check("overlap touch shows a ghost", play.fx.ghost_visible)
+	_touch(0, spot, false)
+	await _frames(3)
+	_check("overlap touch starts a wall", play.sim.walls_started == walls0 + 1)
+	_check("overlap touch does not arm home", not main.home.is_guarding())
+	await _wait_s(0.7)
+	_touch(0, spot, true)
+	await _frames(3)
+	_touch(0, spot, false)
+	await _frames(3)
+	_check(
+		"second overlap tap stays in play, home not armed",
+		main.screen == "play" and not main.home.is_guarding()
+	)
 	main.open_map()
 	await _wait_s(1.0)
 	await _shot("13_inset_map")
@@ -269,6 +345,14 @@ func _phase_shell() -> void:
 		(
 			"shell card: level_card_shown=%s free_levels_finished=%d next shown=%s"
 			% [shown, free_done[0], main.play.win_card.has_next()]
+		)
+	)
+	var wc: OfWinCard = main.play.win_card
+	_check(
+		"shell L3 card: replay and map centred as a pair",
+		(
+			is_equal_approx(wc._replay.position.x + wc._replay.size.x * 0.5, 360.0)
+			and is_equal_approx(wc._map.position.x + wc._map.size.x * 0.5, 720.0)
 		)
 	)
 	Engine.remove_meta(&"mwm_play_shell")

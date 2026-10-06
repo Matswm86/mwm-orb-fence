@@ -366,7 +366,7 @@ Rule 16 (no reflex demands at the easiest level) holds: in Lett a wall at 14 cel
 
 ### 10.2 Where the setting lives
 
-Same as MWM Neon Bricks (follow whatever the owner decides there): inside MWM Play, a "Orb Fence: Lett / Vanlig" row in the parent area and the adapter calls `set_difficulty(easy: bool)` on `enter()`. Stand-alone: the gear on the world map opens Lett/Vanlig, sound, music, vibration and "Mindre bevegelse". Takes effect from the next level start.
+Same as MWM Neon Bricks (follow whatever the owner decides there): inside MWM Play, a "Orb Fence: Lett / Vanlig" row in the parent area and the adapter calls `set_difficulty(easy: bool)` on `enter()`. Stand-alone: the gear on the world map opens Lett/Vanlig, sound, music and "Mindre bevegelse". Difficulty takes effect from the next level start. Vibration is not in this build: it would need the Android vibrate permission, and the stand-alone game asks for no permissions.
 
 ## 11. Shell hooks (summary for the builder)
 

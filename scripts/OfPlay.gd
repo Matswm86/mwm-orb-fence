@@ -56,6 +56,8 @@ var _idle_t: float = 0.0
 var _last_hint_t: float = -99.0
 var _hints_shown: int = 0
 var _touched_field: bool = false
+## The child tapped a direction button: the onboarding hand stops for good.
+var _touched_dir: bool = false
 var _turn_pulse_done: bool = false
 var _hand_line: Dictionary = {}
 var _hand_ghost: bool = false
@@ -151,6 +153,7 @@ func start_level(id: int) -> void:
 	_last_hint_t = -99.0
 	_hints_shown = 0
 	_touched_field = false
+	_touched_dir = false
 	_turn_pulse_done = false
 	_hand_line = {}
 	_hand_ghost = false
@@ -275,16 +278,19 @@ func _update_snegl() -> void:
 
 
 func _update_hints() -> void:
-	# Onboarding hand: level 1, until the child first touches the field.
+	# Onboarding hand: level 1, until the child first touches the field or a
+	# direction button. It shows a line in the CURRENTLY chosen direction and
+	# never changes the choice (GDD 3.3: up-down is pre-chosen).
 	var want_hand: bool = (
 		level_id == 1
 		and not _touched_field
+		and not _touched_dir
 		and sim.walls_started == 0
 		and _level_t >= OfBalance.HAND_FIRST_S
 		and not autopilot
 	)
 	if want_hand and not fx.hand_visible:
-		_hand_line = sim.best_line(-1, true)
+		_hand_line = sim.best_line(buttons.chosen, true)
 		fx.restart_hand()
 	fx.hand_visible = want_hand and not _hand_line.is_empty()
 	if fx.hand_visible:
@@ -292,7 +298,6 @@ func _update_hints() -> void:
 		var pressing: bool = fx.hand_pressing()
 		if pressing and not _hand_ghost and _field_ptr < 0:
 			_hand_ghost = true
-			buttons.chosen = 0 if bool(_hand_line["vertical"]) else 1
 			_show_ghost_for(_hand_line["origin"], true)
 			_ghost_cell = Vector2i(-1, -1)
 		elif not pressing and _hand_ghost:
@@ -371,6 +376,7 @@ func _on_press(st: InputEventScreenTouch, p: Vector2) -> void:
 	var b: int = OfDirButtons.hit(p)
 	if b >= 0:
 		_btn_ptr[st.index] = b
+		_touched_dir = true
 		buttons.set_down(b, true)
 		sfx.play("tap")
 		return

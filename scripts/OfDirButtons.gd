@@ -97,18 +97,15 @@ func _draw() -> void:
 			_outline_arrow(ICONS[i], c, r2 * 0.62, Color(WHITE, 0.8))
 
 
-## Outline version of the double arrow for the unchosen disc.
+## Outline version of the double arrow for the unchosen disc: the same
+## shape as the chosen icon (one bar, two heads), drawn as a thin outline.
 func _outline_arrow(name: String, c: Vector2, s: float, col: Color) -> void:
 	var ax := Vector2(0.0, 1.0) if name == "updown" else Vector2(1.0, 0.0)
 	var px := Vector2(-ax.y, ax.x)
 	var half_len: float = s * 0.62
-	draw_line(c - ax * half_len * 0.45, c + ax * half_len * 0.45, col, 4.0, true)
-	draw_line(
-		c - ax * half_len * 0.45 + px * s * 0.07, c + ax * half_len * 0.45 + px * s * 0.07, col, 3.0
-	)
+	draw_line(c - ax * half_len * 0.45, c + ax * half_len * 0.45, col, 5.0, true)
 	for sgn: float in [-1.0, 1.0]:
 		var tip: Vector2 = c + ax * half_len * sgn
 		var base: Vector2 = c + ax * half_len * 0.45 * sgn
 		var tri := PackedVector2Array([tip, base + px * s * 0.32, base - px * s * 0.32, tip])
 		draw_polyline(tri, col, 4.0, true)
-	draw_arc(c, s * 0.15, 0.0, TAU, 24, col, 4.0, true)
