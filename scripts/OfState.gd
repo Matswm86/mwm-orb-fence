@@ -7,9 +7,12 @@ extends Node
 ##
 ## Hooks: set_full_unlock(on), set_difficulty(easy), set_shell_inset(inset),
 ## set_sfx_on / set_music_on / set_haptics_on / set_less_motion, save_game().
-## Signals up: level_card_shown(level_id), free_levels_finished().
+## Signals up: level_card_shown(level_id), endless_card_shown(round),
+## free_levels_finished().
 
 signal level_card_shown(level_id: int)
+## Uendelig round card (GDD 6.5); the shell treats it like level_card_shown.
+signal endless_card_shown(round: int)
 signal free_levels_finished
 signal settings_changed
 
@@ -31,6 +34,8 @@ var music_volume: float = 0.6
 var haptics_on: bool = false
 var less_motion: bool = false
 var cleared: Array[int] = []
+## Best Uendelig round per setting (GDD 6.5, 8.6).
+var endless_best: Dictionary = {"lett": 0, "vanlig": 0}
 ## True when no save existed at start: the first launch opens level 1 directly.
 var first_launch: bool = true
 
@@ -140,6 +145,25 @@ func suggested_level() -> int:
 	return 0
 
 
+## The Uendelig disc shows once level 5 is cleared and only in the full game.
+func endless_unlocked() -> bool:
+	return full_unlock and is_cleared(OfBalance.ENDLESS_UNLOCK_LEVEL)
+
+
+func best_round(is_easy: bool) -> int:
+	return int(endless_best.get("lett" if is_easy else "vanlig", 0))
+
+
+## Saves when the round beats the best; true = new best.
+func report_round(is_easy: bool, round_k: int) -> bool:
+	var key: String = "lett" if is_easy else "vanlig"
+	if round_k <= int(endless_best.get(key, 0)):
+		return false
+	endless_best[key] = round_k
+	save_game()
+	return true
+
+
 func next_level_after(level_id: int) -> int:
 	var nxt: int = level_id + 1
 	if visible_levels().has(nxt):
@@ -152,6 +176,7 @@ func save_game() -> void:
 		"version": SAVE_VERSION,
 		"cleared": cleared,
 		"difficulty": "lett" if easy else "vanlig",
+		"endless_best": {"lett": best_round(true), "vanlig": best_round(false)},
 		"settings":
 		{
 			"sfx": sfx_on,
@@ -187,6 +212,14 @@ func load_game() -> void:
 			cleared.append(int(v))
 	cleared.sort()
 	easy = String(d.get("difficulty", "lett")) != "vanlig"
+	# Older saves have no endless_best: both read as 0 (GDD 8.6).
+	endless_best = {"lett": 0, "vanlig": 0}
+	var eb: Variant = d.get("endless_best", {})
+	if eb is Dictionary:
+		for key: String in ["lett", "vanlig"]:
+			var v: Variant = (eb as Dictionary).get(key, 0)
+			if v is float or v is int:
+				endless_best[key] = maxi(0, int(v))
 	var s: Variant = d.get("settings", {})
 	if s is Dictionary:
 		var sd: Dictionary = s
