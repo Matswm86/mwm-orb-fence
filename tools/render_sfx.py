@@ -17,6 +17,7 @@ of_pass_*). Deterministic: every random layer has a fixed seed. Files peak at
 
 Usage:
     python3 tools/render_sfx.py --kenney <dir with kenney_impact-sounds> [--out assets/sfx]
+        [--only mirror ...]   (render only these names, e.g. a newly added sound)
 """
 
 from __future__ import annotations
@@ -477,6 +478,21 @@ def sonar(variant: int) -> np.ndarray:
     return finish(echo(lp(ping, 3000.0), 0.075, 0.3, 2, 1800.0), PEAK, fade_ms=20)
 
 
+def mirror() -> np.ndarray:
+    """Mirror bounce (worlds 5-6): a short glassy ping, brighter and shorter
+    than the sonar blip, with a quick upward glint so it reads as "the ball
+    turned" (GDD 9, about 0.2 s plus a short tail)."""
+    d = 0.2
+    f = note(7)
+    t = tt(d)
+    glint = sine_glide(d, f * 0.94, f * 1.06, 0.03) * env(d, 0.001, 0.035)
+    bell = glass_bell(f * 2.0, d, 0.05)
+    air = hp(noise(d, 211), 6000.0) * env(d, 0.0005, 0.006)
+    shimmer = np.sin(2 * np.pi * f * 3.0 * t) * env(d, 0.002, 0.02)
+    x = mix((glint, 0.6), (bell, 0.55), (air, 0.08), (shimmer, 0.12))
+    return finish(reverb(lp(x, 9000.0), 0.35, 0.18, 9000.0, seed=212), PEAK, fade_ms=40)
+
+
 def fizzle(variant: int) -> np.ndarray:
     """Ball hits a growing wall: soft energy-shield fizzle. Friendly bubbly
     blips plus a short electric sparkle that thins out, never a buzzer."""
@@ -680,6 +696,7 @@ def build(kenney: Path) -> dict[str, np.ndarray]:
     out["star_ping"] = star_ping()
     out["shimmer"] = shimmer()
     out["warp_in"] = warp_in()
+    out["mirror"] = mirror()
     return out
 
 
@@ -702,9 +719,12 @@ def main() -> None:
     ap.add_argument(
         "--out", type=Path, default=Path(__file__).resolve().parent.parent / "assets" / "sfx"
     )
+    ap.add_argument("--only", nargs="*", default=None, help="render only these names")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     for name, x in build(args.kenney).items():
+        if args.only is not None and name not in args.only:
+            continue
         write_ogg(x, args.out / f"of_{name}.ogg")
         st = " stereo" if x.ndim == 2 else ""
         print(f"of_{name}.ogg  {len(x) / SR:.2f} s{st}")

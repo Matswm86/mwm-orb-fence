@@ -38,6 +38,7 @@ const SOUNDS: Dictionary = {
 	"capture_m": [["of_capture_m"], 0.0, -2.0],
 	"capture_l": [["of_capture_l"], 0.0, -1.0],
 	"bounce": [["of_sonar_1", "of_sonar_2", "of_sonar_3", "of_sonar_4"], 0.03, -20.0],
+	"mirror": [["of_mirror"], 0.03, -14.0],
 	"pop": [["of_fizzle_1", "of_fizzle_2", "of_fizzle_3"], 0.06, -6.0],
 	"crack": [["of_crack"], 0.03, -12.0],
 	"rewind": [["of_rewind"], 0.0, -5.0],
@@ -131,14 +132,30 @@ func bounce(radius: float) -> void:
 	play("bounce", OfBalance.BALL_RADIUS / maxf(radius, 1.0))
 
 
+## Mirror bounce (W5-6): glassy ping, shares the bounce rate limit; pitch
+## follows the ball size like the bounce.
+func mirror(radius: float) -> void:
+	while not _bounce_times.is_empty() and _clock - _bounce_times[0] >= 1.0:
+		_bounce_times.pop_front()
+	if _bounce_times.size() >= OfBalance.BOUNCE_SOUNDS_PER_S:
+		return
+	_bounce_times.append(_clock)
+	play("mirror", OfBalance.BALL_RADIUS / maxf(radius, 1.0))
+
+
+## Capture sound key by room size; thresholds in cells come from the grid
+## (14 / 40 on 14 x 16, 32 / 90 on 21 x 24: same area, GDD 9).
+static func capture_key(cells: int, m_at: int = 14, l_at: int = 40) -> String:
+	if cells >= l_at:
+		return "capture_l"
+	if cells >= m_at:
+		return "capture_m"
+	return "capture_s"
+
+
 ## Room captured: crystal chime, bigger for bigger rooms.
-func capture(cells: int) -> void:
-	if cells >= 40:
-		play("capture_l")
-	elif cells >= 14:
-		play("capture_m")
-	else:
-		play("capture_s")
+func capture(cells: int, m_at: int = 14, l_at: int = 40) -> void:
+	play(capture_key(cells, m_at, l_at))
 
 
 ## % milestone: one pentatonic step higher per milestone.
