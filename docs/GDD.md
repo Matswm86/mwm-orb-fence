@@ -139,7 +139,7 @@ Every element has a shape cue, so colour is never the only cue (rule 36). Colour
 
 ### 5.2 Power-up tokens (our own twist: you get them by capturing them)
 
-A token floats in one empty cell (drawn 60 px, slow 0.5 rev/s spin). Balls pass over it. **It activates when its cell becomes CAPTURED, CAGED or part of a completed WALL**, so it uses the core verb and adds no new input (my call). Max 2 tokens per level. Same token again = timer refresh, not stack.
+A token floats in one empty cell (drawn 60 px, slow 0.5 rev/s spin). Balls pass over it. **It activates when its cell becomes CAPTURED, CAGED or part of a completed WALL**, so it uses the core verb and adds no new input (my call). Max 2 tokens per level, except L29 with 3 (one of each, table 6.3). Same token again = timer refresh, not stack.
 
 | Name (NO / EN) | Icon | Effect | Twist | First level |
 |---|---|---|---|---|

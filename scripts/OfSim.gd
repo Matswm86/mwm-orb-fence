@@ -430,10 +430,48 @@ func _shield_push(origin: Vector2i, vertical: bool) -> void:
 			b.pos = p
 			b.dir[ax] = -absf(b.dir[ax]) if left else absf(b.dir[ax])
 		else:
-			var c: Vector2i = _nearest_empty(cell_of(b.pos), b.radius)
+			# Stay in the ball's own region (GDD 4.6): only cells on its side
+			# of the coming wall line, reachable without crossing it. A side
+			# with no empty cell at all (the ball sits on the field edge)
+			# falls back to the other side, where the ball already is.
+			var region: Dictionary = _side_region(origin, vertical, left)
+			if region.is_empty():
+				region = _side_region(origin, vertical, not left)
+			var c: Vector2i = _nearest_empty(cell_of(b.pos), b.radius, region)
 			if c.x >= 0 and c != origin:
 				b.pos = cell_center(c)
 			safety_moves += 1
+
+
+## EMPTY cells on one side of a wall about to grow from origin, reachable
+## from the cells next to the origin without crossing the wall's line (the
+## run of EMPTY cells the two halves will fill). Keys = Vector2i.
+func _side_region(origin: Vector2i, vertical: bool, left: bool) -> Dictionary:
+	var along := Vector2i(0, 1) if vertical else Vector2i(1, 0)
+	var across := Vector2i(1, 0) if vertical else Vector2i(0, 1)
+	var line: Dictionary = {origin: true}
+	for s: Vector2i in [-along, along]:
+		var c: Vector2i = origin + s
+		while get_cell(c) == Cell.EMPTY:
+			line[c] = true
+			c += s
+	var side: Vector2i = -across if left else across
+	var seen: Dictionary = {}
+	var todo: Array[Vector2i] = []
+	for lc: Variant in line.keys():
+		var seed_c: Vector2i = (lc as Vector2i) + side
+		if get_cell(seed_c) == Cell.EMPTY and not seen.has(seed_c):
+			seen[seed_c] = true
+			todo.append(seed_c)
+	while not todo.is_empty():
+		var c: Vector2i = todo.pop_back()
+		for st: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			var nb: Vector2i = c + st
+			if seen.has(nb) or line.has(nb) or get_cell(nb) != Cell.EMPTY:
+				continue
+			seen[nb] = true
+			todo.append(nb)
+	return seen
 
 
 func _grow(dt: float) -> void:
@@ -853,8 +891,9 @@ func _safety() -> void:
 
 
 ## Nearest EMPTY cell where a ball of radius r touches no solid; if there is
-## none, the nearest EMPTY cell.
-func _nearest_empty(from: Vector2i, r: float = 0.0) -> Vector2i:
+## none, the nearest EMPTY cell. A non-empty `only` limits the search to its
+## keys (one region).
+func _nearest_empty(from: Vector2i, r: float = 0.0, only: Dictionary = {}) -> Vector2i:
 	var best := Vector2i(-1, -1)
 	var best_d: int = 1 << 30
 	var loose := Vector2i(-1, -1)
@@ -862,6 +901,8 @@ func _nearest_empty(from: Vector2i, r: float = 0.0) -> Vector2i:
 	for y: int in rows:
 		for x: int in cols:
 			if grid[y * cols + x] != Cell.EMPTY:
+				continue
+			if not only.is_empty() and not only.has(Vector2i(x, y)):
 				continue
 			var d: int = absi(x - from.x) + absi(y - from.y)
 			if d < loose_d:

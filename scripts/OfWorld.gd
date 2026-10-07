@@ -51,6 +51,13 @@ const REF_CELL: float = 72.0
 const STONE_POOL: int = 64
 const MIRROR_POOL: int = 12
 const OUT_POOL: int = 160
+## 21 x 24 look (48 px cells): grid dot radius px and strength, ice bar
+## half width (share of the cell; 0.36 keeps the 17 px bar of the 72 px
+## grid) and the frosted fill of the rest of a wall cell.
+const FINE_DOT_PX: float = 2.6
+const FINE_DOT_MIX: float = 0.55
+const FINE_ICE_HALF_W: float = 0.36
+const FINE_ICE_CELL_A: float = 0.55
 
 var camera: Camera3D
 var cam_pivot: Node3D
@@ -95,14 +102,24 @@ var _moon_card: MeshInstance3D
 var _rim: MeshInstance3D
 var _rim_mat: ShaderMaterial
 var _glass_mat: ShaderMaterial
+var _ice_mat: ShaderMaterial
 
-var _balls: Array[Node3D] = []
-var _rings2: Array[MeshInstance3D] = []
-var _ball_halo_mats: Array[ShaderMaterial] = []
-var _snegl_quads: Array[MeshInstance3D] = []
+## Ball parts, one MultiMesh each (QA 2026-10-07 finding 1: a node per
+## part cost about 4 draw calls per ball). Instance i of _ball_mms is ball
+## i; the Stor second rings are packed first-come into _ring2_mm.
+var _sphere_mm: MultiMeshInstance3D
+var _ring_mm: MultiMeshInstance3D
+var _ring2_mm: MultiMeshInstance3D
+var _halo_mm: MultiMeshInstance3D
+var _snegl_mm: MultiMeshInstance3D
+var _ring_xf: Transform3D = Transform3D.IDENTITY
+var _ring2_xf: Transform3D = Transform3D.IDENTITY
+var _halo_xf: Transform3D = Transform3D.IDENTITY
+var _snegl_xf: Transform3D = Transform3D.IDENTITY
 var _snegl_mat: ShaderMaterial
-var _trails: Array[MeshInstance3D] = []
-var _trail_meshes: Array[ImmediateMesh] = []
+## All ball trails in one mesh (one draw call).
+var _trail: MeshInstance3D
+var _trail_mesh: ImmediateMesh
 var _hist: Array[Array] = []
 var _squash_t: PackedFloat32Array = PackedFloat32Array()
 
@@ -391,9 +408,9 @@ func _build_field() -> void:
 	# Ice bars: a 72 px quad, scaled per grid.
 	var iq := QuadMesh.new()
 	iq.size = Vector2(REF_CELL, REF_CELL) * PX
-	var ice_mat := ShaderMaterial.new()
-	ice_mat.shader = preload("res://shaders/ice.gdshader")
-	_ice_mmi = _mm_instance(iq, ice_mat, OfBalance.MAX_CELLS)
+	_ice_mat = ShaderMaterial.new()
+	_ice_mat.shader = preload("res://shaders/ice.gdshader")
+	_ice_mmi = _mm_instance(iq, _ice_mat, OfBalance.MAX_CELLS)
 	_game_nodes.append(_ice_mmi)
 	# Stones.
 	var sps: PackedScene = load("res://assets/models/stone_block.glb")
@@ -450,64 +467,44 @@ func _build_actors() -> void:
 	trail_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	trail_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	trail_mat.no_depth_test = false
+	var sm := SphereMesh.new()
+	sm.radius = 0.24
+	sm.height = 0.48
+	sm.radial_segments = 16
+	sm.rings = 8
+	_sphere_mm = _mm_instance(sm, ball_mat, BALL_POOL)
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.33
+	tm.outer_radius = 0.38
+	tm.rings = 24
+	tm.ring_segments = 6
+	_ring_mm = _mm_instance(tm, ring_mat, BALL_POOL)
+	_ring_xf = Transform3D(Basis.from_euler(Vector3(deg_to_rad(24.0), 0.0, deg_to_rad(-14.0))))
+	# Stor: a second ring (shape cue "double ring", DESIGN 7b).
+	var tm2 := TorusMesh.new()
+	tm2.inner_radius = 0.42
+	tm2.outer_radius = 0.465
+	tm2.rings = 24
+	tm2.ring_segments = 6
+	_ring2_mm = _mm_instance(tm2, ring_mat, BALL_POOL)
+	_ring2_xf = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-30.0), 0.0, deg_to_rad(20.0))))
+	var halo := _glow_quad(1.2, ORB_SHELL, 0, 0.9)
+	_halo_mm = _mm_instance(halo.mesh, halo.material_override, BALL_POOL)
+	halo.free()
+	_halo_xf = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, -0.3))
+	var q := QuadMesh.new()
+	q.size = Vector2(0.95, 0.95)
+	_snegl_mm = _mm_instance(q, _snegl_mat, BALL_POOL)
+	_snegl_xf = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, 0.05))
+	for mmi: MultiMeshInstance3D in _ball_mms():
+		mmi.multimesh.visible_instance_count = 0
+	_trail = MeshInstance3D.new()
+	_trail_mesh = ImmediateMesh.new()
+	_trail.mesh = _trail_mesh
+	_trail.material_override = trail_mat
+	_trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_trail)
 	for i: int in BALL_POOL:
-		var root := Node3D.new()
-		add_child(root)
-		var sphere := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 0.24
-		sm.height = 0.48
-		sm.radial_segments = 16
-		sm.rings = 8
-		sphere.mesh = sm
-		sphere.material_override = ball_mat
-		root.add_child(sphere)
-		var ring := MeshInstance3D.new()
-		var tm := TorusMesh.new()
-		tm.inner_radius = 0.33
-		tm.outer_radius = 0.38
-		tm.rings = 24
-		tm.ring_segments = 6
-		ring.mesh = tm
-		ring.material_override = ring_mat
-		ring.rotation = Vector3(deg_to_rad(24.0), 0.0, deg_to_rad(-14.0))
-		root.add_child(ring)
-		# Stor: a second ring (shape cue "double ring", DESIGN 7b).
-		var ring2 := MeshInstance3D.new()
-		var tm2 := TorusMesh.new()
-		tm2.inner_radius = 0.42
-		tm2.outer_radius = 0.465
-		tm2.rings = 24
-		tm2.ring_segments = 6
-		ring2.mesh = tm2
-		ring2.material_override = ring_mat
-		ring2.rotation = Vector3(deg_to_rad(-30.0), 0.0, deg_to_rad(20.0))
-		ring2.visible = false
-		root.add_child(ring2)
-		_rings2.append(ring2)
-		var halo := _glow_quad(1.2, ORB_SHELL, 0, 0.9)
-		halo.position = Vector3(0.0, 0.0, -0.3)
-		root.add_child(halo)
-		_ball_halo_mats.append(halo.material_override as ShaderMaterial)
-		var sq := MeshInstance3D.new()
-		var q := QuadMesh.new()
-		q.size = Vector2(0.95, 0.95)
-		sq.mesh = q
-		sq.material_override = _snegl_mat
-		sq.position = Vector3(0.0, 0.0, 0.05)
-		sq.visible = false
-		root.add_child(sq)
-		_snegl_quads.append(sq)
-		root.visible = false
-		_balls.append(root)
-		var trail := MeshInstance3D.new()
-		var im := ImmediateMesh.new()
-		trail.mesh = im
-		trail.material_override = trail_mat
-		trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(trail)
-		_trails.append(trail)
-		_trail_meshes.append(im)
 		_hist.append([])
 	_squash_t.resize(BALL_POOL)
 	_squash_t.fill(99.0)
@@ -534,6 +531,10 @@ func _build_actors() -> void:
 	# _place_tokens (max OfBalance.MAX_TOKENS per level).
 	for kind: String in TOKEN_ART:
 		_token_scenes[kind] = load(String(TOKEN_ART[kind][0])) as PackedScene
+
+
+func _ball_mms() -> Array[MultiMeshInstance3D]:
+	return [_sphere_mm, _ring_mm, _ring2_mm, _halo_mm, _snegl_mm]
 
 
 func _make_token(kind: String) -> Node3D:
@@ -617,10 +618,9 @@ func show_gameplay(on: bool) -> void:
 	for n: Node3D in _game_nodes:
 		n.visible = on
 	if not on:
-		for b: Node3D in _balls:
-			b.visible = false
-		for t: MeshInstance3D in _trails:
-			t.visible = false
+		for mmi: MultiMeshInstance3D in _ball_mms():
+			mmi.multimesh.visible_instance_count = 0
+		_trail_mesh.clear_surfaces()
 		for t: Node3D in _tokens:
 			t.visible = false
 		_hide_beam()
@@ -643,6 +643,14 @@ func bind_level(sim: OfSim, picture: Texture2D, world_id: int = 1) -> void:
 	_k = _cell / REF_CELL
 	_glass_mat.set_shader_parameter("cells", Vector2(_cols, _rows))
 	_glass_mat.set_shader_parameter("cell_px", _cell)
+	# 21 x 24 (QA 2026-10-07 findings 3-4): smaller, fainter crossing dots,
+	# and a wall that captured nothing fills its whole cell with frosted ice
+	# around the bar, so it reads as a wall cell, not a thin line.
+	var fine: bool = _cell < REF_CELL
+	_glass_mat.set_shader_parameter("dot_px", FINE_DOT_PX if fine else 4.2)
+	_glass_mat.set_shader_parameter("dot_mix", FINE_DOT_MIX if fine else 1.0)
+	_ice_mat.set_shader_parameter("half_w", FINE_ICE_HALF_W if fine else 0.24)
+	_ice_mat.set_shader_parameter("cell_a", FINE_ICE_CELL_A if fine else 0.0)
 	_frozen = false
 	_reveal_all_t = -1.0
 	_cry_state.fill(0)
@@ -702,6 +710,11 @@ func _place_stones(sim: OfSim) -> void:
 		_mirror_face_mmi.multimesh.set_instance_transform(i, _hidden_xf())
 	for i: int in range(no, OUT_POOL):
 		_out_mmi.multimesh.set_instance_transform(i, _hidden_xf())
+	# Empty pools draw nothing (no draw call on levels without them).
+	_stone_mmi.multimesh.visible_instance_count = n
+	_mirror_mmi.multimesh.visible_instance_count = nm
+	_mirror_face_mmi.multimesh.visible_instance_count = nm
+	_out_mmi.multimesh.visible_instance_count = no
 
 
 func _place_tokens(sim: OfSim) -> void:
@@ -761,8 +774,22 @@ func _rebuild_static(sim: OfSim) -> void:
 				ice_n += 1
 	for i: int in range(ice_n, OfBalance.MAX_CELLS):
 		_ice_mmi.multimesh.set_instance_transform(i, _hidden_xf())
+	_ice_mmi.multimesh.visible_instance_count = ice_n
+	_fit_crystal_count()
 	_build_rim(sim)
 	_update_crystal(0.0)
+
+
+## Crystal instances are indexed by cell (row * cols + col); only up to the
+## last crystal cell of the bound grid is submitted (0 before the first
+## capture, never the 504-cell pool on a 224-cell grid; QA finding 1).
+func _fit_crystal_count() -> void:
+	var last: int = -1
+	for i: int in range(_cols * _rows - 1, -1, -1):
+		if _cry_state[i] == 1:
+			last = i
+			break
+	_crystal_mmi.multimesh.visible_instance_count = last + 1
 
 
 func _build_rim(sim: OfSim) -> void:
@@ -876,6 +903,8 @@ func reveal_all(sim: OfSim) -> void:
 				_cry_t[i] = 0.0 if _less_motion else -d * (OfBalance.CLEAR_PICTURE_FADE_S - 0.15)
 	for i: int in _ice_mmi.multimesh.instance_count:
 		_ice_mmi.multimesh.set_instance_transform(i, _hidden_xf())
+	_ice_mmi.multimesh.visible_instance_count = 0
+	_fit_crystal_count()
 	_rim.mesh = null
 	_cry_animating = true
 	_hide_beam()
@@ -923,16 +952,18 @@ func _sync_balls(sim: OfSim, real_dt: float, game_dt: float) -> void:
 	_snegl_mat.set_shader_parameter("left", left)
 	if not _less_motion:
 		_snegl_mat.set_shader_parameter("spin", _t * 2.5)
-	for i: int in BALL_POOL:
-		var on: bool = i < sim.balls.size() and not _frozen_hidden()
-		_balls[i].visible = on
-		_trails[i].visible = on
-		if not on:
-			continue
+	var n: int = 0 if _frozen_hidden() else mini(sim.balls.size(), BALL_POOL)
+	var n_stor: int = 0
+	var sphere: MultiMesh = _sphere_mm.multimesh
+	var ring: MultiMesh = _ring_mm.multimesh
+	var ring2: MultiMesh = _ring2_mm.multimesh
+	var halo: MultiMesh = _halo_mm.multimesh
+	var snegl: MultiMesh = _snegl_mm.multimesh
+	_trail_mesh.clear_surfaces()
+	var trail_open: bool = false
+	for i: int in n:
 		var b: OfSim.Ball = sim.balls[i]
 		var wp: Vector3 = field_to_world(b.pos, BALL_Z)
-		_balls[i].position = wp
-		_rings2[i].visible = b.kind == OfSim.Kind.STOR
 		var sc: float = b.radius / OfBalance.BALL_RADIUS
 		if b.caged:
 			sc *= OfBalance.CAGED_BALL_SCALE
@@ -940,15 +971,28 @@ func _sync_balls(sim: OfSim, real_dt: float, game_dt: float) -> void:
 		var sq: float = 1.0
 		if _squash_t[i] < 0.08:
 			sq = 0.9
-		_balls[i].scale = Vector3(sc / sq, sc * sq, sc)
-		_snegl_quads[i].visible = snegl_on
-		_trails[i].visible = not b.caged
+		var xf := Transform3D(Basis.from_scale(Vector3(sc / sq, sc * sq, sc)), wp)
+		sphere.set_instance_transform(i, xf)
+		ring.set_instance_transform(i, xf * _ring_xf)
+		halo.set_instance_transform(i, xf * _halo_xf)
+		snegl.set_instance_transform(i, xf * _snegl_xf)
+		if b.kind == OfSim.Kind.STOR:
+			ring2.set_instance_transform(n_stor, xf * _ring2_xf)
+			n_stor += 1
 		var h: Array = _hist[i]
 		if game_dt > 0.0 or h.is_empty():
 			h.push_front(wp)
 			while h.size() > TRAIL_POINTS:
 				h.pop_back()
-		_draw_trail(i, b)
+		if not b.caged:
+			trail_open = _draw_trail(i, b, trail_open)
+	if trail_open:
+		_trail_mesh.surface_end()
+	sphere.visible_instance_count = n
+	ring.visible_instance_count = n
+	halo.visible_instance_count = n
+	ring2.visible_instance_count = n_stor
+	snegl.visible_instance_count = n if snegl_on else 0
 
 
 ## During the level-clear reveal the balls pop into stars (2D), so the 3D
@@ -957,13 +1001,13 @@ func _frozen_hidden() -> bool:
 	return _frozen and _reveal_all_t > OfBalance.CLEAR_SLOWMO_S * 0.5
 
 
-func _draw_trail(i: int, b: OfSim.Ball) -> void:
-	var im: ImmediateMesh = _trail_meshes[i]
-	im.clear_surfaces()
+## Appends ball i's trail (a strip resampled to a fixed length behind the
+## ball) to the shared trail mesh as triangles; opens the surface on the
+## first trail. Returns whether the surface is open.
+func _draw_trail(i: int, b: OfSim.Ball, open: bool) -> bool:
 	var h: Array = _hist[i]
 	if h.size() < 2 or _frozen:
-		return
-	# Resample to a fixed length behind the ball along its direction.
+		return open
 	var dir3 := Vector3(b.dir.x, -b.dir.y, 0.0).normalized()
 	var side := Vector3(-dir3.y, dir3.x, 0.0)
 	var head: Vector3 = h[0]
@@ -973,20 +1017,37 @@ func _draw_trail(i: int, b: OfSim.Ball) -> void:
 		travelled += (h[k] as Vector3).distance_to(h[k - 1] as Vector3)
 	len_m = minf(len_m, travelled)
 	if len_m < 0.02:
-		return
-	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+		return open
+	if not open:
+		_trail_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 	var n: int = 10
+	var prev_a := Vector3.ZERO
+	var prev_b := Vector3.ZERO
+	var prev_c := Color()
 	for k: int in n:
 		var t: float = float(k) / float(n - 1)
 		var p: Vector3 = head - dir3 * len_m * t - Vector3(0.0, 0.0, 0.05)
 		var w: float = 0.2 * (1.0 - t) + 0.01
 		var a: float = 0.55 * (1.0 - t)
 		var col := Color(ORB_SHELL.r * a * 1.4, ORB_SHELL.g * a * 1.2, ORB_SHELL.b * a * 1.2, a)
-		im.surface_set_color(col)
-		im.surface_add_vertex(p + side * w)
-		im.surface_set_color(col)
-		im.surface_add_vertex(p - side * w)
-	im.surface_end()
+		var pa: Vector3 = p + side * w
+		var pb: Vector3 = p - side * w
+		if k > 0:
+			# The two triangles the old strip made between rows k-1 and k.
+			for v: Array in [
+				[prev_a, prev_c],
+				[prev_b, prev_c],
+				[pa, col],
+				[prev_b, prev_c],
+				[pb, col],
+				[pa, col]
+			]:
+				_trail_mesh.surface_set_color(v[1])
+				_trail_mesh.surface_add_vertex(v[0])
+		prev_a = pa
+		prev_b = pb
+		prev_c = col
+	return true
 
 
 func _hide_beam() -> void:

@@ -7,6 +7,9 @@ render_mode unshaded, blend_mix, depth_draw_opaque, cull_disabled, shadows_disab
 uniform vec4 ice : source_color = vec4(0.812, 0.894, 1.000, 1.0);
 uniform vec4 gold : source_color = vec4(1.000, 0.788, 0.302, 1.0);
 uniform float half_w = 0.24;
+// Frosted fill of the rest of the cell (0 = bar only). The 21 x 24 grid
+// uses it so a finished wall reads as a wall cell (QA finding 3).
+uniform float cell_a = 0.0;
 
 void fragment() {
 	float across = abs(UV.y - 0.5) * 2.0;
@@ -15,6 +18,9 @@ void fragment() {
 	float core_l = 1.0 - smoothstep(0.03, 0.06, across);
 	vec3 col = mix(ice.rgb * 1.05, ice.rgb * 0.72, edge);
 	col = mix(col, gold.rgb * 1.3, core_l);
+	if (cell_a > 0.0) {
+		col = mix(col, ice.rgb * 0.42, 1.0 - body);
+	}
 	ALBEDO = col;
-	ALPHA = body;
+	ALPHA = body + (1.0 - body) * cell_a;
 }

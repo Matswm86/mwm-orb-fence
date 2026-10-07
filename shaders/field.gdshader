@@ -13,6 +13,8 @@ uniform float dot_px = 4.2;
 uniform float cell_px = 72.0;
 uniform float grid_gain = 0.9;
 uniform float dot_gain = 1.6;
+// Dot strength (1 = full; the 21 x 24 grid uses less, QA finding 4).
+uniform float dot_mix = 1.0;
 uniform float fade = 1.0;
 
 void fragment() {
@@ -27,6 +29,7 @@ void fragment() {
 	float dot_a = (1.0 - smoothstep(dot_px - w.x, dot_px + w.x, d)) * inner.x * inner.y;
 	vec3 col = glass.rgb;
 	col = mix(col, grid.rgb * grid_gain, line_a * 0.85);
+	dot_a *= dot_mix;
 	col = mix(col, dot_color.rgb * dot_gain, dot_a);
 	float a = max(glass.a, max(line_a * 0.9, dot_a));
 	ALBEDO = col;

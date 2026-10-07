@@ -14,7 +14,8 @@ extends Node
 ##   shell           - inside MWM Play: Engine meta set, set_full_unlock(false),
 ##                     levels 1-3 only, level 3 card has no "next" and emits
 ##                     free_levels_finished; own home disc and gear hidden
-##   worlds          - worlds 2-6: one level per world mid-capture (21 x 24
+##   worlds          - worlds 2-6: one level per world mid-capture plus L6
+##                     (first of world 2) and L16 (first 21 x 24 level) (21 x 24
 ##                     from world 4), Vanlig L29 spark bar (42), map pages
 ##                     with the Uendelig disc, Uendelig HUD badge on round 9
 ##                     (first 21 x 24 round), a round card with a new best
@@ -310,7 +311,16 @@ func _mid_capture(start: Callable, lo: float, hi: float) -> float:
 func _phase_worlds() -> void:
 	var play: OfPlay = main.play
 	OrbFence.easy = true
-	var picks: Array = [[8, true], [13, true], [18, true], [22, true], [24, false], [28, true]]
+	var picks: Array = [
+		[6, true],
+		[8, true],
+		[13, true],
+		[16, true],
+		[18, true],
+		[22, true],
+		[24, false],
+		[28, true]
+	]
 	for pk: Array in picks:
 		var id: int = pk[0]
 		OrbFence.easy = bool(pk[1])

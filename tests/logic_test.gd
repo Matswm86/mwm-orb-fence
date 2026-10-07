@@ -458,6 +458,16 @@ func _test_table() -> void:
 	hud.set_endless(3, 0, false)
 	last = hud.spark_slot(41)
 	_check(last.x + last.y <= 860.0, "Uendelig spark bar ends by x 860 (%s)" % last)
+	# QA 2026-10-07 finding 8: big budgets switch to grouped pips + a digit.
+	_check(hud.spark_grouped() and hud._spark_lbl.visible, "42 sparks: grouped bar with digit")
+	_check(
+		hud._spark_lbl.get_theme_font_size("font_size") >= 40 and hud._spark_lbl.text == "42",
+		"spark digit >= 40 px shows the sparks left"
+	)
+	_check(hud._best_lbl.get_theme_font_size("font_size") >= 40, "best-round digit >= 40 px")
+	hud.set_endless(0, 0, false)
+	hud.reset(0.75, true, 12)
+	_check(not hud.spark_grouped() and not hud._spark_lbl.visible, "12 sparks: full-size row")
 	hud.queue_free()
 
 
@@ -570,6 +580,70 @@ func _test_lyn_skjold() -> void:
 		"shielded wall never pops (%d blocks)" % sk.shield_blocks
 	)
 	_check(sk.walls_done == 1, "shielded wall completes")
+	_test_skjold_region()
+
+
+## QA 2026-10-07 finding 6: a shielded wall started on a ball's cell never
+## moves that ball across the wall line, also when the side push does not
+## fit and the fallback search runs (GDD 4.6 "in its own region").
+func _test_skjold_region() -> void:
+	var trials: int = 0
+	var fallbacks: int = 0
+	var crossed: int = 0
+	var edge: int = 0
+	var max_jump: float = 0.0
+	for id: int in range(26, 31):
+		for easy: bool in [true, false]:
+			for k: int in 30:
+				var sim := OfSim.new()
+				sim.rng.seed = 5000 + id * 97 + k * 13 + (1 if easy else 0)
+				sim.setup(id, easy)
+				for f: int in 20 + (k * 37) % 200:
+					sim.step(DT)
+				var free: Array[OfSim.Ball] = []
+				for b: OfSim.Ball in sim.balls:
+					if not b.caged:
+						free.append(b)
+				if free.is_empty() or sim.wall != null:
+					continue
+				var ball: OfSim.Ball = free[k % free.size()]
+				var origin: Vector2i = sim.cell_of(ball.pos)
+				var vertical: bool = k % 2 == 0
+				var ax: int = 0 if vertical else 1
+				var lo: float = float(origin[ax]) * sim.cell
+				var hi: float = lo + sim.cell
+				var before: Dictionary = {}
+				for b: OfSim.Ball in sim.balls:
+					if not b.caged and sim.overlap_cells(b.pos, b.radius).has(origin):
+						before[b] = b.pos
+				sim.shield_ready = true
+				var safety0: int = sim.safety_moves
+				if not sim.start_wall(origin, vertical):
+					continue
+				trials += 1
+				fallbacks += sim.safety_moves - safety0
+				for b: Variant in before.keys():
+					var ob: OfSim.Ball = b
+					var p0: Vector2 = before[b]
+					var was_left: bool = p0[ax] < (lo + hi) * 0.5
+					max_jump = maxf(max_jump, p0.distance_to(ob.pos))
+					if (was_left and ob.pos[ax] > hi) or (not was_left and ob.pos[ax] < lo):
+						# A wall along the field edge leaves no cell on the
+						# ball's side: the other side is its only region.
+						if sim._side_region(origin, vertical, was_left).is_empty():
+							edge += 1
+						else:
+							crossed += 1
+	print(
+		(
+			(
+				"    Skjold region: trials %d, fallback moves %d, crossed the wall %d,"
+				+ " edge-line moves %d, max jump %.0f px"
+			)
+			% [trials, fallbacks, crossed, edge, max_jump]
+		)
+	)
+	_check(trials >= 200 and crossed == 0, "Skjold push keeps the ball on its own side")
 
 
 func _test_specials() -> void:

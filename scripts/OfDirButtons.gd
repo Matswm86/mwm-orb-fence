@@ -14,6 +14,9 @@ const WHITE := Color(1.0, 1.0, 1.0)
 const HUD_PANEL := Color(0.051, 0.102, 0.200, 0.92)
 const HUD_EDGE := Color(0.663, 0.741, 0.878)
 const ICONS: Array[String] = ["updown", "sideside"]
+## Sides of the batched discs and rings (the old draw_arc used 72 points).
+const DISC_SIDES: int = 64
+const RING_SIDES: int = 72
 
 ## 0 = up-down, 1 = side-side.
 var chosen: int = 0
@@ -66,7 +69,12 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+## Discs, rings and Lyn notch discs of both buttons go into one batch (one
+## draw call, QA 2026-10-07 finding 1); the icons, arrows and bolts draw
+## after it, on top as before. The two buttons never overlap.
 func _draw() -> void:
+	var batch := OfBatch2D.new()
+	var icons: Array[Callable] = []
 	for i: int in 2:
 		var c: Vector2 = OfBalance.DIR_CENTERS[i]
 		var pressed: bool = _down[i] or _press_t[i] < 0.12
@@ -78,35 +86,38 @@ func _draw() -> void:
 		if i == chosen:
 			var r: float = OfBalance.CHOSEN_R * k
 			if glow_a > 0.0:
-				draw_circle(c, r + 34.0, Color(GOLD, 0.30 * glow_a))
-			draw_circle(c + Vector2(0, 9), r + 4.0, Color(0.0, 0.0, 0.0, 0.35))
-			draw_arc(c, r + 14.5, 0.0, TAU, 72, WHITE, 5.0, true)
+				batch.add_disc(c, r + 34.0, Color(GOLD, 0.30 * glow_a), DISC_SIDES)
+			batch.add_disc(c + Vector2(0, 9), r + 4.0, Color(0.0, 0.0, 0.0, 0.35), DISC_SIDES)
+			batch.add_ring(c, r + 14.5, 5.0, WHITE, RING_SIDES)
 			var fill: Color = GOLD
 			if pressed and less_motion:
 				fill = GOLD.darkened(0.15)
-			draw_circle(c, r, fill)
-			draw_arc(c, r - 3.0, 0.0, TAU, 72, INK, 6.0, true)
-			OfDisc.draw_icon(self, ICONS[i], c, r * 0.62, INK)
+			batch.add_disc(c, r, fill, DISC_SIDES)
+			batch.add_ring(c, r - 3.0, 6.0, INK, RING_SIDES)
+			icons.append(OfDisc.draw_icon.bind(self, ICONS[i], c, r * 0.62, INK))
 		else:
 			var r2: float = OfBalance.UNCHOSEN_R * k
 			if glow_a > 0.0:
-				draw_circle(c, r2 + 30.0, Color(GOLD, 0.35 * glow_a))
-				draw_arc(c, r2 + 8.0, 0.0, TAU, 72, Color(GOLD, glow_a), 6.0, true)
+				batch.add_disc(c, r2 + 30.0, Color(GOLD, 0.35 * glow_a), DISC_SIDES)
+				batch.add_ring(c, r2 + 8.0, 6.0, Color(GOLD, glow_a), RING_SIDES)
 			var fill2: Color = HUD_PANEL
 			if pressed and less_motion:
 				fill2 = HUD_PANEL.darkened(0.3)
-			draw_circle(c, r2, fill2)
-			draw_arc(c, r2 - 2.0, 0.0, TAU, 72, HUD_EDGE, 4.0, true)
-			_outline_arrow(ICONS[i], c, r2 * 0.62, Color(WHITE, 0.8))
-		_draw_lyn_notches(c)
+			batch.add_disc(c, r2, fill2, DISC_SIDES)
+			batch.add_ring(c, r2 - 2.0, 4.0, HUD_EDGE, RING_SIDES)
+			icons.append(_outline_arrow.bind(ICONS[i], c, r2 * 0.62, Color(WHITE, 0.8)))
+		_add_lyn_notches(batch, icons, c)
+	batch.flush(self)
+	for f: Callable in icons:
+		f.call()
 
 
-func _draw_lyn_notches(c: Vector2) -> void:
+func _add_lyn_notches(batch: OfBatch2D, icons: Array[Callable], c: Vector2) -> void:
 	for n: int in lyn_charges:
 		var p: Vector2 = c + Vector2(70.0 + 34.0 * float(n), -84.0)
-		draw_circle(p, 17.0, INK)
-		draw_circle(p, 14.0, GOLD)
-		draw_polyline(OfFieldFx.bolt_points(p, 9.0), INK, 3.5, true)
+		batch.add_disc(p, 17.0, INK)
+		batch.add_disc(p, 14.0, GOLD)
+		icons.append(draw_polyline.bind(OfFieldFx.bolt_points(p, 9.0), INK, 3.5, true))
 
 
 ## Outline version of the double arrow for the unchosen disc: the same

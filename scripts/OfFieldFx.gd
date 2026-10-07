@@ -16,6 +16,10 @@ const SKJOLD := Color(0.718, 0.612, 1.000)
 const MIRROR_FACE := Color(0.910, 0.984, 1.000)
 const CAGE_BAR := Color(0.788, 0.827, 0.902)
 const DOT_STEP: float = 24.0
+## Sides of a batched ghost dot (12 px wide: a 20-gon reads as round).
+const DOT_SEGMENTS: int = 20
+## Sides of a pop bubble ring (the old draw_arc used 28 points).
+const BUBBLE_SEGMENTS: int = 28
 const GLINT_S: float = 0.15
 
 var less_motion: bool = false
@@ -192,18 +196,7 @@ func _draw() -> void:
 	_draw_glints()
 	_draw_hint()
 	_draw_ghost()
-	for b: Dictionary in _bubbles:
-		var t: float = float(b["t"])
-		if t < 0.0:
-			continue
-		var k: float = clampf(t / (OfBalance.POP_ANIM_S + 0.1), 0.0, 1.0)
-		var r: float = float(b["r"]) * (0.7 + 0.5 * k)
-		draw_arc(b["p"], r, 0.0, TAU, 28, Color(BUBBLE, (1.0 - k) * 0.95), 3.0, true)
-		draw_circle(
-			(b["p"] as Vector2) + Vector2(-r * 0.35, -r * 0.35),
-			r * 0.16,
-			Color(WHITE, (1.0 - k) * 0.8)
-		)
+	_draw_bubbles()
 	for s: Dictionary in _sparks:
 		var a: float = 1.0 - float(s["t"]) / 0.1
 		draw_colored_polygon(OfDisc.sparkle_points(s["p"], 12.0), Color(1.0, 0.85, 0.8, a * 0.8))
@@ -237,6 +230,22 @@ func _draw() -> void:
 			draw_polyline(pts, INK, 3.0, true)
 	if hand_visible:
 		_draw_hand()
+
+
+## Pop bubbles in one draw call however many are alive (QA 2026-10-07
+## finding 1: one arc + one circle each cost about 95 draws for 24 bubbles).
+func _draw_bubbles() -> void:
+	var batch := OfBatch2D.new()
+	for b: Dictionary in _bubbles:
+		var t: float = float(b["t"])
+		if t < 0.0:
+			continue
+		var k: float = clampf(t / (OfBalance.POP_ANIM_S + 0.1), 0.0, 1.0)
+		var r: float = float(b["r"]) * (0.7 + 0.5 * k)
+		var p: Vector2 = b["p"]
+		batch.add_ring(p, r, 3.0, Color(BUBBLE, (1.0 - k) * 0.95), BUBBLE_SEGMENTS)
+		batch.add_disc(p + Vector2(-r * 0.35, -r * 0.35), r * 0.16, Color(WHITE, (1.0 - k) * 0.8))
+	batch.flush(self)
 
 
 ## Zigzag bolt (Lyn icon) as an open polyline.
@@ -308,14 +317,18 @@ func _dots(cells: Array[Vector2], vertical: bool, col: Color, rad: float, shrink
 	var o: float = ghost_origin.dot(axis)
 	var perp: Vector2 = ghost_origin - axis * o
 	var v: float = lo
+	# Plain dots go into one batch: one draw call for the whole line instead
+	# of one per dot (QA 2026-10-07 finding 1).
+	var batch := OfBatch2D.new()
 	while v <= hi + 0.1:
 		if absf(v - o) > 26.0:
 			var pv: float = lerpf(v, o, shrink)
 			if shield_ghost:
 				draw_polyline(hex_points(perp + axis * pv, rad + 3.0, true), col, 2.5, true)
 			else:
-				draw_circle(perp + axis * pv, rad, col)
+				batch.add_disc(perp + axis * pv, rad, col, DOT_SEGMENTS)
 		v += DOT_STEP
+	batch.flush(self)
 
 
 func _draw_ghost() -> void:
