@@ -1,6 +1,6 @@
 # MWM Orb Fence: game design doc
 
-Version 1, 2026-10-06, game-designer. Store-safe wall-building game for the MWM Play family app (ages 4-7 and 8+, one-time unlock, no ads, offline). The owner chose the name **MWM Orb Fence** on 2026-10-05.
+Version 2, 2026-10-07, game-designer (v1 2026-10-06; v2 adds the owner's 2026-10-07 decisions: the 30-level ramp, the 21 x 24 field, Uendelig and the space sound set). Store-safe wall-building game for the MWM Play family app (ages 4-7 and 8+, one-time unlock, no ads, offline). The owner chose the name **MWM Orb Fence** on 2026-10-05.
 
 Target: Android, portrait 1080x1920, Godot 4.6. Stand-alone app first, then a game inside MWM Play. Visuals and renderer tier belong to graphic-designer (`docs/DESIGN.md`); this doc only lists game-feel hooks. Background music is an owner-supplied synthwave/cyberpunk mix played low (owner).
 
@@ -70,7 +70,7 @@ Holdover filter: ignore all touches for 300 ms after any screen change (rule 8).
 
 ### 4.1 Grid
 
-- Field origin (36, 256), cell 72 px, 14 x 16 cells = 224 cells. A ring of border cells sits outside (drawn as the frame, not counted).
+- Field origin (36, 256), cell 72 px, 14 x 16 cells = 224 cells in worlds 1-3; worlds 4-6 and big Uendelig rounds use 21 x 24 cells of 48 px in the same rect (6.4b). A ring of border cells sits outside (drawn as the frame, not counted).
 - Cell states: `EMPTY`, `ROCK` (level data, never counted), `MIRROR` (level data, never counted), `BUILDING`, `WALL`, `CAPTURED`, `CAGED`.
 - **Fill** = (WALL + CAPTURED + CAGED cells) / (all cells that are not ROCK or MIRROR). The level is clear the moment fill >= the level's target.
 
@@ -95,7 +95,7 @@ Holdover filter: ignore all touches for 300 ms after any screen change (rule 8).
 - **Only the touched half pops.** Its BUILDING cells turn back to EMPTY in a soap-bubble burst (0.25 s, cells non-solid at once). The other half keeps growing and becomes a real wall if it completes. Touching the origin cell pops both halves.
 - **A wall growing into a ball** counts as the ball touching it (same pop).
 - **Lett: a pop costs nothing, ever.** No lives, no counter, no restart. After 2 pops within 10 s, the hint glow shows a safer line (section 8.3).
-- **Vanlig: a pop costs one spark.** Spark budget per level = 3 x ball count, max 24 (my call from the sim, 4.7). World 1 and every breather level have unlimited sparks. When the bar is empty, the next pop starts a **gentle restart**: the screen dims to 60% over 0.6 s, walls and fill slide back out over 0.8 s, the bar refills, balls respawn, dim lifts over 0.4 s. No text, no "game over", no failure sound (a soft rewind whoosh). Under 2 s total.
+- **Vanlig: a pop costs one spark.** Spark budget per level = 3 x ball count (owner 2026-10-07; the old max of 24 is dropped, so L28-30 get 42). World 1 and every breather level have unlimited sparks; Uendelig refills 3 x balls every round (6.5). When the bar is empty, the next pop starts a **gentle restart**: the screen dims to 60% over 0.6 s, walls and fill slide back out over 0.8 s, the bar refills, balls respawn, dim lifts over 0.4 s. No text, no "game over", no failure sound (a soft rewind whoosh). Under 2 s total.
 - Rule 31 (no game over for 4-7) holds in both settings: there is no game over screen at all.
 
 Why not slow the balls while a wall grows ("calm time") in Lett: I simulated it. Ball speed x0.5 to x1.0 during growth changed pops on Lett level 2 only from 1.9 to 1.6 per level and did not change clear time (my calc, `tools/wall_sim.py --calm`). Lett already has slow balls (200 px/s = 2.8 cells/s) and fast walls (14 cells/s), so it is cut.
@@ -120,7 +120,7 @@ If a ball's bounding box overlaps a solid cell for 2 frames in a row, or its pos
 | 6, 400 | 13 | 78% | 47% | **20%** |
 | 8, 440 | 20 | 93% | 57% | **28%** |
 
-A flat 3 like Neon Bricks' net would restart most Vanlig attempts, and our old `max(3, level + 2)` lives formula is the "balls + 2" column. 3 x balls keeps restarts rare in worlds 2-3 and occasional in 5-6.
+A flat 3 like Neon Bricks' net would restart most Vanlig attempts, and our old `max(3, level + 2)` lives formula is the "balls + 2" column. 3 x balls keeps restarts rare in worlds 2-3 and occasional in 5-6. The owner chose 3 x balls on 2026-10-07; the restart chances for the final ball counts are in 6.3 (`tools/ramp_sim.py`, which simulates the real restart).
 
 ## 5. Elements
 
@@ -155,8 +155,9 @@ Each level has a hidden neon picture (graphic-designer: planets, moons, rockets,
 
 ### 6.1 Rules
 
-- 6 worlds x 5 levels = 30 hand-made levels (no endless in v1, my call).
-- Every world: **L1** one new element, **L2** practise it, **L3** one new token or rule, **L4** combine, **L5** breather (fewer balls, lower target, Vanlig sparks unlimited, a picture-first level).
+- 6 worlds x 5 levels = 30 hand-made levels, plus the endless mode **Uendelig** (6.5, owner 2026-10-07).
+- Every world: **L1** one new element, **L2** practise it, **L3** one new token or rule, **L4** combine, **L5** breather (same ball count as L4, world base speed, lower target, Vanlig sparks unlimited, a picture-first level).
+- **Difficulty ramp (owner 2026-10-07):** more balls as the levels get harder, JezzBall-style, and faster balls world by world; Lett climbs slower than Vanlig. The ball count never goes down from one level to the next (breathers ease speed, target and sparks instead, my call). Exact rules in 6.3.
 - No sequential lock (same as Neon Bricks): any level can be picked from the map; the lowest uncleared level pulses at 1 Hz as the suggestion; nothing is ever shown locked.
 - **Free part (owner):** the game holds `full_unlock: bool`, default `true`. The MWM Play adapter sets it on `enter()` through a public hook `set_full_unlock(on: bool)`.
   - `full_unlock == false`: the map shows only world 1 levels 1-3. Level discs 4-5 and world arrows are not drawn at all. Clearing level 3 shows the normal win card with replay + home only (no "next") and emits `free_levels_finished`; the shell then shows its "Du har spilt alle banene her" card.
@@ -164,61 +165,79 @@ Each level has a hidden neon picture (graphic-designer: planets, moons, rockets,
 
 ### 6.2 Worlds
 
-**Settings, world names and picture subjects in this table are SUPERSEDED by DESIGN.md (deep space, owner's pick 2026-10-06): Månebanen, Ringplaneten, Stormkjempen, Kometveien, Isspeilet, Galaksehjertet. Mechanics per world below still hold.**
+Names and settings follow DESIGN.md 2c (deep space, owner's pick 2026-10-06); backdrops and picture subjects are graphic-designer's.
 
-| World | Name (NO / EN) | Setting cue for graphic-designer | New element (L1) | New token or rule (L3) |
-|---|---|---|---|---|
-| 1 | Neonrommet / Neon Room | Grid floor, sunset glow | Walls, turning (L2), Stone (L4) | Snegl |
-| 2 | Burhagen / Cage Garden | Neon palms, night garden | Cage rule (L6), Stor ball (L8) | (L6 is the rule) |
-| 3 | Lynbyen / Bolt City | Skyline, rain lights | Lyn (L11), L-shaped field (L13) | Lyn |
-| 4 | Kveldsveien / Evening Road | Road into the sun | Kvikk ball (L16), plus-shaped field (L18) | (field shape) |
-| 5 | Speilsjøen / Mirror Lake | Water reflections, moon | Mirror (L21), stone islands (L23) | (islands) |
-| 6 | Stjerneporten / Star Gate | Space, rings | Skjold (L26) | Skjold |
+| World | Name (NO / EN) | Setting (DESIGN.md 2c) | Field | New element (L1) | New token or rule (L3) |
+|---|---|---|---|---|---|
+| 1 | Månebanen / Moon Orbit | Ocean home planet, grey moon | 14 x 16 | Walls, turning (L2), Stone (L4) | Snegl |
+| 2 | Ringplaneten / Ringed Planet | Ringed giant, ring plane behind the field | 14 x 16 | Cage rule (L6), Stor ball (L8) | (L6 is the rule) |
+| 3 | Stormkjempen / Storm Giant | Banded gas giant, storm eye | 14 x 16 | Lyn (L11), L-shaped field (L13) | Lyn |
+| 4 | Kometveien / Comet Road | Asteroid belt, slow comets | **21 x 24** | Kvikk ball (L16), plus-shaped field (L18) | (field shape) |
+| 5 | Isspeilet / Ice Mirror | Frozen moon, aurora | 21 x 24 | Mirror (L21), ice islands (L23) | (islands) |
+| 6 | Galaksehjertet / Galaxy Heart | Spiral galaxy, gold core | 21 x 24 | Skjold (L26) | Skjold |
 
-### 6.3 Level table
+The finer field from world 4 is section 6.4b.
 
-Ball counts: total (special balls in brackets: S = Stor, K = Kvikk). Speed in px/s. Target = fill %. Sparks: Vanlig budget (inf = unlimited; Lett is always unlimited). Target time = median clear time. Restart = share of Vanlig attempts with at least one gentle restart.
+### 6.3 Level table (difficulty ramp, owner 2026-10-07)
 
-| # | W | Name | New / focus | Field | Tokens | Lett balls / speed / target | Vanlig balls / speed / target | Vanlig sparks | Target time Lett / Vanlig | Restart Vanlig |
+**Ramp rules** (the table is these rules written out; `tools/ramp_sim.py`, `table()`):
+
+| | Lett (4-7) | Vanlig (8+) |
+|---|---|---|
+| Balls, world 1 | 1, 2, 2, 2, 2 | 2, 3, 3, 4, 4 |
+| Balls, world w = 2..6 (L1, L2, L3, L4, L5) | n, n, n+1, n+1, n+1 with n = w | n, n, n+1, n+1, n+1 with n = 2w + 1 |
+| Balls, range | 1 -> 7 (+1 about every 4 levels) | 2 -> 14 (+1 about every 2 levels) |
+| World base speed, px/s (W1..W6) | 200, 210, 220, 230, 240, 250 | 320, 340, 360, 380, 400, 420 |
+| Speed inside a world | base + 5 per level L1-L4 (W1 flat); L5 = base | base + 10 per level L1-L4 (W1 flat); L5 = base |
+| Speed, range | 200 -> 265 px/s (+33%) | 320 -> 450 px/s (+41%) |
+| Target | 65%, breathers 60% | 75%, breathers 70% |
+| Sparks | none (pops are free) | 3 x balls (owner); world 1 and breathers unlimited |
+| Field | 14 x 16 (72 px) in W1-3, 21 x 24 (48 px) in W4-6, same 1008 x 1152 px rect (6.4b) | same |
+
+Ball counts: total (special balls in brackets: S = Stor, K = Kvikk; specials count inside the total). Speed in px/s (the special ball's own multiplier applies on top). Target = fill %. Sparks: Vanlig budget (inf = unlimited). Sim columns: median clear time of the child bot, and for Vanlig the share of attempts with at least one gentle restart; every one of the 60 rows cleared in 60 of 60 runs (my calc, run below).
+
+| # | W | Name | New / focus | Field and map | Tokens | Lett balls / speed / target | Vanlig balls / speed / target | Vanlig sparks | Sim Lett median | Sim Vanlig median / restart |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 1 | Første strek | Place a wall | Open | | 1 / 200 / 65% | 2 / 320 / 75% | inf | 11 / 13 s (my calc) | 0 |
-| 2 | 1 | Snu veggen | Turn the wall (buttons) | Open | | 2 / 200 / 65% | 3 / 320 / 75% | inf | 18 / 22 s (my calc) | 0 |
-| 3 | 1 | Sneglen | Snegl token | Open | 2 Snegl | 2 / 200 / 65% | 3 / 320 / 75% | inf | 19 / 21 s (my calc) | 0 |
-| 4 | 1 | Steinene | Stone | 8 stones | | 2 / 200 / 65% | 3 / 320 / 75% | inf | 22 / 20 s (my calc) | 0 |
-| 5 | 1 | Kveldssol | Breather (sun picture) | Open | | 2 / 200 / 60% | 2 / 320 / 70% | inf | 17 / 12 s (my calc) | 0 |
-| 6 | 2 | Buret | Cage rule | 4 corner stones (cage pockets) | | 2 / 210 / 65% | 3 / 340 / 75% | 9 | 25 / 25 s | 8% (my calc) |
-| 7 | 2 | Tre i buret | Cage practise | Open | 1 Snegl | 3 / 210 / 65% | 4 / 340 / 75% | 12 | 32 / 25 s | 5% (my calc, at 360 px/s) |
-| 8 | 2 | Kjempen | Stor ball | Open | | 3 (1 S) / 210 / 65% | 4 (1 S) / 340 / 75% | 12 | 32 / 28 s | 6% (guess) |
-| 9 | 2 | Kjempene | Stor + cage + stones | 6 stones | 1 Snegl | 3 (2 S) / 210 / 68% | 4 (2 S) / 340 / 75% | 12 | 35 / 30 s | 8% (guess) |
-| 10 | 2 | Palmene | Breather (palm picture) | Open | 1 Snegl | 2 / 210 / 60% | 3 / 340 / 70% | inf | 20 / 18 s | 0 |
-| 11 | 3 | Lynet | Lyn token | Open | 2 Lyn | 3 / 220 / 65% | 4 / 360 / 75% | 12 | 30 / 25 s | 5% (my calc) |
-| 12 | 3 | Lynrask | Lyn practise | 4 stones | 2 Lyn | 3 / 220 / 65% | 5 / 360 / 75% | 15 | 32 / 35 s | 12% (guess) |
-| 13 | 3 | Hjørnet | L-shaped field | L (6x6 block removed top-right) | 1 Snegl | 3 / 220 / 65% | 4 / 360 / 75% | 12 | 30 / 28 s | 8% (guess) |
-| 14 | 3 | Lyn i hjørnet | Combine | L + 4 stones | 1 Lyn, 1 Snegl | 3 (1 S) / 220 / 68% | 5 (1 S) / 360 / 75% | 15 | 35 / 38 s | 15% (guess) |
-| 15 | 3 | Regnbyen | Breather (city picture) | Open | 1 Lyn | 2 / 220 / 60% | 3 / 360 / 70% | inf | 20 / 18 s | 0 |
-| 16 | 4 | Kvikke | Kvikk ball | Open | 1 Snegl | 3 (1 K) / 220 / 65% | 5 (1 K) / 380 / 75% | 15 | 32 / 38 s | 17% (my calc) |
-| 17 | 4 | Kvikk og stor | Kvikk + Stor | 4 stones | 1 Snegl | 3 (1 K, 1 S) / 220 / 65% | 5 (2 K, 1 S) / 380 / 75% | 15 | 35 / 40 s | 18% (guess) |
-| 18 | 4 | Korset | Plus-shaped field | Plus (4x4 corners removed) | 1 Lyn | 3 / 220 / 65% | 5 / 380 / 75% | 15 | 32 / 38 s | 15% (guess) |
-| 19 | 4 | Gatene | Combine | Plus + 4 stones | 1 Lyn, 1 Snegl | 4 (1 K) / 220 / 68% | 6 (2 K) / 380 / 75% | 18 | 45 / 45 s | 20% (guess) |
-| 20 | 4 | Solveien | Breather (road picture) | Open | 1 Snegl | 3 / 220 / 60% | 4 / 380 / 70% | inf | 28 / 22 s | 0 |
-| 21 | 5 | Speilet | Mirror | 4 mirrors | 1 Snegl | 3 / 230 / 65% | 5 / 400 / 75% | 15 | 35 / 40 s | 17% (guess) |
-| 22 | 5 | Speilsal | Mirror practise | 8 mirrors | 1 Lyn | 4 / 230 / 65% | 6 / 400 / 75% | 18 | 45 / 45 s | 20% (my calc, open field) |
-| 23 | 5 | Øyene | Stone islands | 6 islands of 2x2 stones | 1 Snegl, 1 Lyn | 4 / 230 / 65% | 6 / 400 / 75% | 18 | 45 / 45 s | 20% (guess) |
-| 24 | 5 | Speiløyene | Combine | Islands + 4 mirrors | 1 Lyn, 1 Snegl | 4 (1 S, 1 K) / 230 / 68% | 7 (1 S, 2 K) / 400 / 75% | 21 | 50 / 55 s | 25% (guess) |
-| 25 | 5 | Månen | Breather (moon picture) | Open | 2 Snegl | 3 / 230 / 60% | 4 / 400 / 70% | inf | 28 / 25 s | 0 |
-| 26 | 6 | Skjoldet | Skjold token | Open | 2 Skjold | 4 / 240 / 65% | 6 / 420 / 75% | 18 | 45 / 45 s | 20% (guess) |
-| 27 | 6 | Skjold og lyn | Skjold + Lyn | 4 stones | 1 Skjold, 1 Lyn | 4 (1 K) / 240 / 65% | 7 (2 K) / 420 / 75% | 21 | 50 / 55 s | 25% (guess) |
-| 28 | 6 | Labyrinten | Shapes + mirrors | Plus + 4 mirrors | 1 Skjold, 1 Snegl | 4 (1 S) / 240 / 65% | 7 (1 S, 1 K) / 420 / 75% | 21 | 50 / 55 s | 25% (guess) |
-| 29 | 6 | Alt på en gang | Everything | L + islands + 2 mirrors | 1 of each | 5 (1 S, 1 K) / 240 / 68% | 8 (2 S, 2 K) / 440 / 75% | 24 | 55 / 60 s | 28% (my calc, open field) |
-| 30 | 6 | Stjernefinale | Finale, generous (star picture) | Open | 2 Skjold | 4 / 240 / 60% | 6 / 420 / 70% | inf | 40 / 40 s | 0 |
+| 1 | 1 | Første strek | Place a wall | 14x16 open | | 1 / 200 / 65% | 2 / 320 / 75% | inf | 11 s | 16 s / 0 |
+| 2 | 1 | Snu veggen | Turn the wall (buttons) | 14x16 open | | 2 / 200 / 65% | 3 / 320 / 75% | inf | 24 s | 20 s / 0 |
+| 3 | 1 | Sneglen | Snegl token | 14x16 open | 2 Snegl | 2 / 200 / 65% | 3 / 320 / 75% | inf | 24 s | 20 s / 0 |
+| 4 | 1 | Steinene | Stone | 14x16, 8 stones (6.4) | | 2 / 200 / 65% | **4** / 320 / 75% | inf | 24 s | 25 s / 0 |
+| 5 | 1 | Soloppgang | Breather (sunrise picture) | 14x16 open | | 2 / 200 / 60% | **4** / 320 / 70% | inf | 23 s | 20 s / 0 |
+| 6 | 2 | Buret | Cage rule | 14x16, 4 corner stones (cage pockets) | | 2 / 210 / 65% | 5 / 340 / 75% | 15 | 26 s | 29 s / 5% |
+| 7 | 2 | Tre i buret | Cage practise | 14x16 open | 1 Snegl | 2 / 215 / 65% | 5 / 350 / 75% | 15 | 23 s | 32 s / 5% |
+| 8 | 2 | Kjempen | Stor ball | 14x16 open | | 3 (1 S) / 220 / 65% | 6 (1 S) / 360 / 75% | 18 | 33 s | 43 s / 12% |
+| 9 | 2 | Kjempene | Stor + cage + stones | 14x16, 6 stones | 1 Snegl | 3 (2 S) / 225 / 65% | 6 (2 S) / 370 / 75% | 18 | 29 s | 39 s / 10% |
+| 10 | 2 | Ringraketten | Breather (ringed planet + rocket) | 14x16 open | 1 Snegl | 3 / 210 / 60% | 6 / 340 / 70% | inf | 33 s | 36 s / 0 |
+| 11 | 3 | Lynet | Lyn token | 14x16 open | 2 Lyn | 3 / 220 / 65% | 7 / 360 / 75% | 21 | 33 s | 44 s / 12% |
+| 12 | 3 | Lynrask | Lyn practise | 14x16, 4 stones | 2 Lyn | 3 / 225 / 65% | 7 / 370 / 75% | 21 | 29 s | 42 s / 10% |
+| 13 | 3 | Hjørnet | L-shaped field | 14x16 L (6x6 block removed top-right) | 1 Snegl | 4 / 230 / 65% | 8 / 380 / 75% | 24 | 37 s | 53 s / 25% |
+| 14 | 3 | Lyn i hjørnet | Combine | 14x16 L + 4 stones | 1 Lyn, 1 Snegl | 4 (1 S) / 235 / 65% | 8 (1 S) / 390 / 75% | 24 | 41 s | 60 s / 32% |
+| 15 | 3 | Stormøyet | Breather (storm eye + satellite) | 14x16 open | 1 Lyn | 4 / 220 / 60% | 8 / 360 / 70% | inf | 36 s | 48 s / 0 |
+| 16 | 4 | Kvikke | Kvikk ball, first 21x24 field | 21x24 open | 1 Snegl | 4 (1 K) / 230 / 65% | 9 (1 K) / 380 / 75% | 27 | 36 s | 55 s / 8% |
+| 17 | 4 | Kvikk og stor | Kvikk + Stor | 21x24, 4 stone blocks of 2x2 | 1 Snegl | 4 (1 K, 1 S) / 235 / 65% | 9 (2 K, 1 S) / 390 / 75% | 27 | 33 s | 58 s / 12% |
+| 18 | 4 | Korset | Plus-shaped field | 21x24 plus (6x6 cells removed at each corner) | 1 Lyn | 5 / 240 / 65% | 10 / 400 / 75% | 30 | 50 s | 62 s / 22% |
+| 19 | 4 | Beltet | Combine | 21x24 plus + 4 stone blocks of 2x2 | 1 Lyn, 1 Snegl | 5 (1 K) / 245 / 65% | 10 (2 K) / 410 / 75% | 30 | 41 s | 66 s / 27% |
+| 20 | 4 | Kometen | Breather (comet over the belt) | 21x24 open | 1 Snegl | 5 / 230 / 60% | 10 / 380 / 70% | inf | 44 s | 51 s / 0 |
+| 21 | 5 | Speilet | Mirror | 21x24, 4 mirrors | 1 Snegl | 5 / 240 / 65% | 11 / 400 / 75% | 33 | 50 s | 69 s / 18% |
+| 22 | 5 | Speilsal | Mirror practise | 21x24, 8 mirrors | 1 Lyn | 5 / 245 / 65% | 11 / 410 / 75% | 33 | 41 s | 74 s / 20% |
+| 23 | 5 | Isflakene | Ice islands | 21x24, 6 islands of 3x3 stones | 1 Snegl, 1 Lyn | 6 / 250 / 65% | 12 / 420 / 75% | 36 | 50 s | 80 s / 28% |
+| 24 | 5 | Isspeil | Combine | 21x24 islands + 4 mirrors | 1 Lyn, 1 Snegl | 6 (1 S, 1 K) / 255 / 65% | 12 (1 S, 2 K) / 430 / 75% | 36 | 51 s | 77 s / 23% |
+| 25 | 5 | Ismånen | Breather (ice moon + lander) | 21x24 open | 2 Snegl | 6 / 240 / 60% | 12 / 400 / 70% | inf | 46 s | 62 s / 0 |
+| 26 | 6 | Skjoldet | Skjold token | 21x24 open | 2 Skjold | 6 / 250 / 65% | 13 / 420 / 75% | 39 | 50 s | 86 s / 28% |
+| 27 | 6 | Skjold og lyn | Skjold + Lyn | 21x24, 4 stone blocks of 2x2 | 1 Skjold, 1 Lyn | 6 (1 K) / 255 / 65% | 13 (2 K) / 430 / 75% | 39 | 51 s | 85 s / 27% |
+| 28 | 6 | Labyrinten | Shapes + mirrors | 21x24 plus + 4 mirrors | 1 Skjold, 1 Snegl | 7 (1 S) / 260 / 65% | 14 (1 S, 1 K) / 440 / 75% | 42 | 63 s | 103 s / 45% |
+| 29 | 6 | Alt på en gang | Everything | 21x24 L (9x9 removed top-right) + 3 islands of 3x3 + 2 mirrors | 1 of each | 7 (1 S, 1 K) / 265 / 65% | 14 (2 S, 2 K) / 450 / 75% | 42 | 62 s | 99 s / 45% |
+| 30 | 6 | Galaksen | Finale, generous (galaxy + starship) | 21x24 open | 2 Skjold | 7 / 250 / 60% | 14 / 420 / 70% | inf | 53 s | 84 s / 0 |
 
-Where the numbers come from (all my calc unless marked guess): `tools/wall_sim.py 100` for levels 1-5 (100 runs per level and setting); the extra open-field runs in that script's `--sparks` mode and a variant run on 2026-10-06 (Lett 3 balls 220 px/s 70%: median 32 s; 4 balls 240: 45 s; 5 balls 240: 55 s; Vanlig 4 balls 340: 25 s; 6 balls 400: 43 s; 8 balls 440: 58 s) anchor levels 6-30. Shaped fields, cages and tokens are not simulated for levels 6-30, so those times are guesses. The bot is a model of a child (40% of its walls in Lett are planless taps, it thinks 2-6 s between walls), but it never hesitates, misreads or wanders off, so **treat every time as a floor**: a real 4-year-old will likely take 2-3x longer. Rule of thumb for later maps: keep the Lett median under 2 minutes.
+Bold = changed from the shipped world-1 slice (`OfLevels.gd` has Vanlig L4 = 3 and L5 = 2 balls); the builder updates those two values. Map sizes in world 4-6 are in 21 x 24 cells: a 2x2 stone block (96 px) and a 3x3 island (144 px) are the 72 px stone and 2x2 island of worlds 1-3 at the finer grid; a mirror is one 48 px cell.
+
+**How the sim numbers were made (all my calc):** `python3 tools/ramp_sim.py table -n 60`, 2026-10-07, 60 runs per level and setting. The sim plays every level on an **open field** with plain balls: no stones, shaped fields, mirrors, tokens, Stor or Kvikk (tokens and stones mostly help, Kvikk balls make it harder), so levels with a map or specials are approximations; rows with the same config give the same numbers (L2-L4 Lett). The bot is a model of a child (Lett: 40% of its walls are planless taps, 2-6 s thinking between walls; Vanlig: careless 40% of the time, 1-3 s thinking), but it never hesitates, misreads or wanders off, so **treat every time as a floor**: a real 4-year-old will likely take 2-3x longer. Lett medians stay at or under about 1 minute (bot) all the way to level 30; Vanlig restarts stay at or under about 1 in 3 attempts except L28-29 (45%, the two hardest levels; 13 balls there would give about 28%, open question 3).
 
 ### 6.4 World 1 maps (vertical slice, build these exactly)
 
 Format: 14 characters per row = columns c0-c13, rows r0 (top, y 256) to r15. Codes from 5.1, plus `S` = Snegl token on an empty cell.
 
-**Level 1: Første strek**, **Level 2: Snu veggen**, **Level 5: Kveldssol**: all 16 rows are `..............` (open field, 224 cells).
+**Level 1: Første strek**, **Level 2: Snu veggen**, **Level 5: Soloppgang**: all 16 rows are `..............` (open field, 224 cells).
 
 **Level 3: Sneglen** (open field, 2 Snegl tokens): every row `..............` except
 ```
@@ -234,7 +253,89 @@ r10 ...##....##...
 ```
 Four short stone bars: walls stop at them, so the child sees that stones also close rooms.
 
-Level data file (suggested, builder's call): one JSON per level with `rows` (16 strings of 14), `tokens` (inside rows), `lett` and `vanlig` objects `{balls, stor, kvikk, speed, target, sparks}` (sparks 0 = unlimited), `cage` (bool, true from level 6), `picture` (resource id). Values from 6.3.
+Level data file (suggested, builder's call): one JSON per level with `field` (`"14x16"` or `"21x24"`), `rows` (16 strings of 14, or 24 strings of 21), `tokens` (inside rows), `lett` and `vanlig` objects `{balls, stor, kvikk, speed, target, sparks}` (sparks 0 = unlimited), `cage` (bool, true from level 6), `picture` (resource id). Values from 6.3.
+
+### 6.4b Field capacity and the 21 x 24 field
+
+**Where the 14 x 16 field breaks (my calc,** `ramp_sim.py grid` and `dens`, 40 runs per row, open field, Vanlig 75% target, 3 sparks per ball**):**
+
+| Balls (Vanlig, 400 px/s) | 14 x 16, 72 px: median / clear / restart | 21 x 24, 48 px: median / clear / restart |
+|---|---|---|
+| 8 | 53 s / 100% / 20% | 46 s / 100% / 2% |
+| 10 | 69 s / 100% / 18% | (59 s / 100% / 2% at 320 px/s) |
+| 12 | 86 s / 100% / 38% | 69 s / 100% / 10% |
+| 14 | 165 s / **95%** / 50% | (83 s / 100% / 15% at 320 px/s) |
+| 16 | 195 s / **92%** / 60% | 110 s / 100% / 45% |
+| 20 | 600 s cap / **40%** / 85% | 270 s / **85%** / 68% |
+
+Lett (240 px/s, 65%) on 14 x 16 still clears 100% with 8 balls (median 64 s), so Lett alone never needs the finer field.
+
+**Reading:** on 14 x 16 capture strains from 12 balls (restart chance doubles) and breaks at 14 (some runs never clear in 10 minutes). With speed also rising, the safe ceiling is **8 balls** (L13-14 at 380-390 px/s: 25-32% restarts). The 21 x 24 field holds to about 16 balls and breaks around 18-20.
+
+**Decision (my call):** one field per world so each level keeps one map for both settings ("same 30 maps", 10.1). Worlds 1-3 use 14 x 16; **worlds 4-6 use 21 x 24** (Vanlig reaches 9 balls at L16). Uendelig switches by ball count: 14 x 16 up to 8 balls, 21 x 24 from 9.
+
+| Key | 14 x 16 (W1-3) | 21 x 24 (W4-6, Uendelig from 9 balls) | Note |
+|---|---|---|---|
+| `COLS x ROWS` | 14 x 16 = 224 cells | 21 x 24 = 504 cells | |
+| `CELL` | 72 px | 48 px | Field rect unchanged: origin (36, 256), 1008 x 1152 px, so zones (3.2), HUD and buttons do not move |
+| `BALL_RADIUS` | 24 | 20 (simmed) | Stor 28, Kvikk 15 on 21 x 24 (same 1.42x / 0.75x ratios, my call, not simmed) |
+| Ball speed | px/s from 6.3 | px/s from 6.3 | Speeds are px/s on both fields, so "faster" is what the eye sees |
+| `WALL_SPEED` | Lett 14 / Vanlig 10 cells/s | Lett 21 / Vanlig 15 cells/s | Same px/s (1008 / 720) so the wall-versus-ball race does not change with the grid |
+| `CAGE_CELLS` | Lett 12 / Vanlig 8 | Lett 27 / Vanlig 18 | Same area in px |
+| Spawn zone | cols 2-11, rows 2-13 | cols 2-18, rows 2-21 | As simmed |
+| `GHOST_HYSTERESIS` | 0.6 cell (43 px) | 0.6 cell (29 px) | |
+| Capture sound size thresholds (9) | m >= 14, l >= 40 cells | m >= 32, l >= 90 cells | Same area |
+| Crystal MultiMesh (DESIGN 7) | max 224 | max 504 | graphic-designer / builder: 504 x 22 tris |
+
+### 6.5 Uendelig (endless mode, owner 2026-10-07)
+
+**Pitch:** one run of rounds on an open field; every round adds one ball and one speed step; the run never ends by losing; the best round is saved.
+
+**Unlock and entry:** a 200 px "Uendelig" disc (an orb with a looping orbit trail, no text) sits on every world-map page at (540, 1560), between the world arrows. It appears once level 5 is cleared in either setting, and only when `full_unlock` is true (never in the free part). Before that it is not drawn (nothing is ever shown locked). It shows the best round for the current setting as a small digit on a gold star at its top-right (0 = no star).
+
+**Rounds** (k = 1, 2, 3 ...):
+
+| | Lett | Vanlig |
+|---|---|---|
+| Balls in round k | k | k + 1 |
+| Speed in round k | 200 + 5 (k - 1) px/s | 320 + 10 (k - 1) px/s |
+| Cap (reached at) | 10 balls, 245 px/s (round 10) | 13 balls, 430 px/s (round 12) |
+| Field | 14 x 16 up to 8 balls (rounds 1-8), 21 x 24 from 9 balls (round 9+) | 14 x 16 rounds 1-7, 21 x 24 from round 8 |
+| Target | 65% every round | 75% every round |
+| Sparks | none | 3 x balls, refilled at every round start (from round 1, owner rule) |
+| Cage rule | on | on |
+| Map | open field, plain balls (no Stor or Kvikk); from round 3 one Snegl token on a random empty spawn-zone cell | same |
+| Picture | round k reveals the breather picture of world ((k - 1) mod 6) + 1 (L5, L10 ... L30) | same |
+
+**At the cap:** balls and speed stop growing; rounds keep counting with the cap values, so a strong player can push the best round as high as they like. Why these caps (my calc, endless runs below): Vanlig round 12 (13 balls, 430) clears 100% with a 32% restart chance; one step more (14 balls, 440) doubles the median to 142 s and restarts half the rounds, and the plateau is replayed every round after the cap. Lett round 10 (10 balls, 245) has a bot median of 78 s; 12 balls is 94 s and 14 balls 111 s, too long for 4-7 once real-child slowness (2-3x) is added. The cap stays under the 21 x 24 capacity (6.4b).
+
+**No game over:** Lett pops cost nothing. Vanlig: an empty spark bar plus a pop starts the gentle restart (4.4) of **the same round** (same ball count and speed, field and fill reset, sparks refilled); the round number never goes down. The only way out is the home disc / Android back (3.3), which ends the run.
+
+**Round clear:** the normal clear sequence (9) with the win stinger, then a small **round card**: the round's picture, the round number as a big digit on a gold star, and two discs at y 1300: home (x 340, 200 px) and next round (x 740, 240 px, most visible). No auto-advance (rule 26). Every 5th round the card is the full win card (8.4) with spoken praise. The game emits `endless_card_shown(round: int)` on every round card so the shell's play limit can end the session there, like `level_card_shown`.
+
+**New best:** when a cleared round beats the saved best, the star on the card gets a gold ring that pops in (300 ms) with the comms beep at its highest pitch step plus the satellite ping (9). No text, no "record".
+
+**HUD in Uendelig:** the fill meter shortens to x 280-860; a **round badge** (disc, diameter 150, centre (960, 136)) shows the current round as a large digit in both settings, with a small best-round digit on a gold star under it (y 192-220, Vanlig only; in Vanlig the spark bar uses x 280-860). Round 1-9 one digit, 10+ two digits at 80% size. The badge pulses once (300 ms, flash limiter) when a round starts.
+
+**Round start:** warp-in sound (9); when the field switches from 14 x 16 to 21 x 24 the frame redraws itself over 0.8 s (same as level intro) and the warp-in plays at pitch x0.84, so the finer grid reads as "a bigger space", not a glitch.
+
+**Save:** `endless_best` in the save file (8.6), per setting, updated on every round clear that beats it. A run in progress is not saved; leaving the app or the mode ends the run (quitting costs nothing, rule 28).
+
+**Sim of the Uendelig ramp (my calc,** `ramp_sim.py endless Vanlig|Lett`, 40 runs per round, bot medians**):**
+
+| Round | Vanlig balls / px/s / field: median / restart | Lett balls / px/s / field: median |
+|---|---|---|
+| 1 | 2 / 320 / 14x16: 16 s / 12% | 1 / 200 / 14x16: 11 s |
+| 3 | 4 / 340 / 14x16: 28 s / 8% | 3 / 210 / 14x16: 36 s |
+| 5 | 6 / 360 / 14x16: 45 s / 12% | 5 / 220 / 14x16: 52 s |
+| 7 | 8 / 380 / 14x16: 55 s / 28% | 7 / 230 / 14x16: 67 s |
+| 8 | 9 / 390 / 21x24: 59 s / 15% | 8 / 235 / 14x16: 68 s |
+| 9 | 10 / 400 / 21x24: 63 s / 22% | 9 / 240 / 21x24: 79 s |
+| 10 | 11 / 410 / 21x24: 77 s / 22% | 10 / 245 / 21x24: 78 s (cap) |
+| 11 | 12 / 420 / 21x24: 80 s / 30% | = cap |
+| 12+ | 13 / 430 / 21x24: 90 s / 32% (cap) | = cap |
+
+Every round cleared in 40 of 40 runs. A bot run to round 10 takes about 8 min (Vanlig) or 9 min (Lett) of play (my calc, sum of medians), so the best round grows over several sittings.
 
 ## 7. Numbers (single balance table)
 
@@ -243,24 +344,29 @@ All tunables live in one const block or data file (studio rule).
 | Key | Lett (4-7) | Vanlig (8+) | Unit | Note |
 |---|---|---|---|---|
 | `FIELD_ORIGIN` | (36, 256) | same | px | Top-left of cell c0 r0 |
-| `CELL` | 72 | 72 | px | |
-| `COLS / ROWS` | 14 / 16 | same | | 224 cells |
-| `BALL_RADIUS` | 24 | 24 | px | |
-| `STOR_RADIUS / SPEED_MULT` | 34 / 0.8 | 34 / 0.8 | | |
-| `KVIKK_RADIUS / SPEED_MULT` | 18 / 1.15 | 18 / 1.3 | | |
-| `BALL_SPEED` | 200 / 210 / 220 / 220 / 230 / 240 by world | 320 / 340 / 360 / 380 / 400 / 420 (L29 440) | px/s | Table 6.3 |
+| `CELL` | 72 (W1-3), 48 (W4-6) | same | px | 6.4b |
+| `COLS / ROWS` | 14 / 16 (W1-3), 21 / 24 (W4-6) | same | | 224 / 504 cells; Uendelig by ball count (6.5) |
+| `BALL_RADIUS` | 24 / 20 | 24 / 20 | px | 14 x 16 / 21 x 24 |
+| `STOR_RADIUS / SPEED_MULT` | 34 (28) / 0.8 | 34 (28) / 0.8 | | Bracket = 21 x 24 |
+| `KVIKK_RADIUS / SPEED_MULT` | 18 (15) / 1.15 | 18 (15) / 1.3 | | Bracket = 21 x 24 |
+| `WORLD_BASE_SPEED` | 200 / 210 / 220 / 230 / 240 / 250 | 320 / 340 / 360 / 380 / 400 / 420 | px/s | W1-W6 |
+| `LEVEL_SPEED_STEP` | 5 | 10 | px/s | Added per level L1-L4 in W2-6; L5 = base; W1 flat. Table 6.3 |
+| `BALLS` | W1 1,2,2,2,2; then w,w,w+1,w+1,w+1 | W1 2,3,3,4,4; then 2w+1,2w+1,2w+2,2w+2,2w+2 | | w = world 2-6. Table 6.3 |
+| `ENDLESS_BALLS` | k, cap 10 | k + 1, cap 13 | | k = round |
+| `ENDLESS_SPEED` | 200 + 5 (k - 1), cap 245 | 320 + 10 (k - 1), cap 430 | px/s | |
+| `ENDLESS_FIELD_SWITCH_BALLS` | 9 | 9 | | 21 x 24 from 9 balls |
 | `BALL_ANGLE_DEG` | 35-55 | 35-55 | deg from horizontal | Random per ball |
 | `SUBSTEP_MAX_PX` | 8 | 8 | px | |
-| `WALL_SPEED` | 14 | 10 | cells/s per half | |
+| `WALL_SPEED` | 14 (21 on 21 x 24) | 10 (15 on 21 x 24) | cells/s per half | Same px/s on both fields |
 | `MAX_GROWING_WALLS` | 1 | 1 | | |
-| `TARGET` | 65% (breathers 60%, some L4s 68%) | 75% (breathers 70%) | | Table 6.3 |
-| `SPARKS` | unlimited | 3 x balls, max 24; unlimited in W1 + breathers | | 4.7 |
-| `CAGE_CELLS` | 12 | 8 | cells | From level 6 |
+| `TARGET` | 65% (breathers 60%) | 75% (breathers 70%) | | Owner 2026-10-07; Uendelig has no breathers |
+| `SPARKS` | unlimited | 3 x balls, no max; unlimited in W1 + breathers; Uendelig 3 x balls every round | | Owner 2026-10-07. `OfBalance.SPARKS_MAX` (24) goes |
+| `CAGE_CELLS` | 12 (27) | 8 (18) | cells | From level 6; bracket = 21 x 24 |
 | `SNEGL_FACTOR / SECONDS` | 0.6 / 10 | 0.6 / 8 | | |
 | `LYN_FACTOR / WALLS` | 2.5 / 2 | 2.5 / 2 | | |
 | `SKJOLD_WALLS` | 1 | 1 | | |
 | `MIRROR_COOLDOWN` | 0.2 | 0.2 | s | Per ball |
-| `GHOST_HYSTERESIS` | 0.6 | 0.6 | cell | |
+| `GHOST_HYSTERESIS` | 0.6 | 0.6 | cell | 43 px / 29 px |
 | `HINT_IDLE_S` | 7 | 12 | s | No wall started |
 | `HINT_AFTER_POPS` | 2 in 10 s | off | | |
 | `POP_ANIM` | 0.25 | 0.25 | s | Cells non-solid at once |
@@ -273,12 +379,13 @@ All tunables live in one const block or data file (studio rule).
 
 ### 8.1 World map
 
-Same pattern as Neon Bricks: one world per page, 5 level discs (diameter 200, hit area 240) on a neon path between y 400 and 1500, never in the top-left 232 square or below y 1664. Cleared level: disc holds a star and a thumbnail of its picture. Suggested next level: 1 Hz pulse. World change: arrow discs (200 px) at y 1560, x 160 and 920. No swipe, no scroll (rule 20). Stand-alone only: gear disc top-right opens settings.
+Same pattern as Neon Bricks: one world per page, 5 level discs (diameter 200, hit area 240) on a neon path between y 400 and 1500, never in the top-left 232 square or below y 1664. Cleared level: disc holds a star and a thumbnail of its picture. Suggested next level: 1 Hz pulse. World change: arrow discs (200 px) at y 1560, x 160 and 920. Uendelig disc (200 px) at (540, 1560) once level 5 is cleared and `full_unlock` is true (6.5). No swipe, no scroll (rule 20). Stand-alone only: gear disc top-right opens settings.
 
 ### 8.2 HUD
 
 - **Fill meter:** a horizontal glass tube x 280-1040, y 96-176. It fills from the left as the field fills. A **star** marks the target line. Four notches mark 25/50/75/100% of the target (shape cue, rule 36). Lett shows no digits; Vanlig shows the fill % in small digits at the right end (my call).
-- **Spark bar (Vanlig, levels with a budget):** a row of small diamond segments under the meter, y 192-220; each pop removes one with a single crack (one flash, not a strobe). Unlimited levels draw no bar.
+- **Spark bar (Vanlig, levels with a budget):** a row of small diamond segments under the meter, y 192-220; each pop removes one with a single crack (one flash, not a strobe). Segment width = min(32, bar width / budget) px with a 2 px gap, so 42 sparks still fit (18 px each on the 760 px bar). Unlimited levels draw no bar.
+- **Round badge (Uendelig only):** see 6.5.
 - No level number, no text.
 
 ### 8.3 First 60 seconds (no text anywhere)
@@ -310,39 +417,44 @@ A level takes about 15 s to 2 min. A child plays 4-10 levels per sitting and sto
   "version": 1,
   "cleared": [1, 2, 3],
   "difficulty": "lett",
+  "endless_best": {"lett": 0, "vanlig": 0},
   "settings": {"sfx": true, "music": true, "haptics": false, "less_motion": false}
 }
 ```
-Save on level clear, on difficulty or setting change, on leaving and on `NOTIFICATION_APPLICATION_PAUSED`. Mid-level state is not saved: a left level starts fresh (quitting costs nothing, rule 28). `settings` are only read in the stand-alone build; inside MWM Play the shell's settings win.
+Missing `endless_best` (older saves) reads as 0 for both. Save on level clear, on an Uendelig round clear that beats the best, on difficulty or setting change, on leaving and on `NOTIFICATION_APPLICATION_PAUSED`. Mid-level state is not saved: a left level starts fresh (quitting costs nothing, rule 28). `settings` are only read in the stand-alone build; inside MWM Play the shell's settings win.
 
 ## 9. Feel
 
-Sound direction for the sound designer (owner): **modern, not 8-bit chiptune.** Soft analog-style synth plucks, glassy bells, airy noise sweeps, gentle sub thumps, short reverb tails, all sitting under and around an owner-supplied synthwave/cyberpunk music bed played low. Pitched sounds use one pentatonic scale; set its root to the key of the owner's mix (unknown to me). Effects peak around -12 dBFS; music stays at least 6 dB under effects (rule 33). Nothing harsh or alarm-like: no buzzers, no "fail" stings.
+Sound direction: **space, modern, not 8-bit** (owner 2026-10-07: "rockets, spaceships, lasers"). Soft laser zaps, a thin humming beam, force-field seals, sonar blips, shield fizzles, rocket and warp whooshes, comms beeps, satellite pings and doppler spaceship pass-bys, all kept soft for small children: no alarms, no booms, no buzzers, no "fail" stings. The set is shipped (commit 7138dad): `assets/sfx/of_*.ogg`, rendered by `tools/render_sfx.py` (own synthesis plus one Kenney CC0 glass sample in the spark crack, see `CREDITS.md`), played by `scripts/OfSfx.gd`. Pitched sounds use F# major pentatonic (F# G# A# C# D#), which shares 4 of 5 notes with B major, the best fit to the owner's synthwave mix overall. Files peak at -3 dBFS; `OfSfx` sets each event's level (column "dB" = the `SOUNDS` table value, on top of `BASE_DB` -5 and the player's slider), so at the default slider the loudest events peak near -12 dBFS and the music stays at least 6 dB under effects (rule 33). Each play picks a random variant and a small random pitch shift (the "spread") so repeats do not tire the ear.
 
-"Mindre bevegelse" (less motion, rule 39) column says what replaces the effect.
+"Mindre bevegelse" (less motion, rule 39) column says what replaces the effect. Sound names below are the `OfSfx` keys; file lengths include reverb tails (my measurement with ffprobe).
 
-| Event | Visual | Sound | Haptic (only if on; default off, rule 33) | Mindre bevegelse |
+| Event | Visual | Sound: key -> files, what it is, length, dB | Haptic (only if on; default off, rule 33) | Mindre bevegelse |
 |---|---|---|---|---|
-| UI tap (any button: direction, map, card) | Button presses to 94% in 80 ms, springs back 120 ms | Soft rounded "click", synth tom with a short body, < 80 ms, on touch-down | 10 ms | No scale; button tints darker |
-| Field touch-down (ghost appears) | Dotted ghost line fades in over 60 ms, origin dot | Quiet "tick-in", high soft pluck, < 60 ms | none | same |
-| Ghost moves one cell | Line slides to the new cell in 50 ms | Very quiet tick, max 10 per second | none | Line jumps, no slide |
-| Release while a wall grows | Ghost shrinks into its dot, 150 ms | Low muted "not yet" blip, 100 ms | none | Ghost just disappears |
-| **Wall start** | Origin cell lights up with a small ring burst (1 ring, 200 ms) | Punchy filtered "thump + pluck", root note, 150 ms | 12 ms | Ring replaced by a steady glow |
-| **Wall grow tick** | Each new cell slides out of the previous one; bright tip on each half | One continuous rising "zip" riser per wall (pitch climbs about one octave over the wall's growth time), plus a soft tick every 3rd cell per half, max 10 ticks/s | none | Cells appear without slide; sound same |
-| **Wall complete** | Whole wall settles with a 120 ms shine pass along its length | Clean "lock" sound: a short click-clack with a bright bell on top, 250 ms | 18 ms | No shine pass; wall brightens once |
-| **Area captured** | Fill wipes out from the wall across the room over 300 ms, revealing the picture; one soft glow pulse at the end | Warm rising chord swell; size scales with room size (small room: 2 notes, big room: 4-note arpeggio), 400-700 ms | 20 ms | Room fills instantly with a 150 ms fade, no pulse |
-| **Ball bounce** (wall, stone, filled area) | Tiny spark at the contact point, 100 ms | Soft rubbery "boop", very low level, pitch varies slightly per ball size (Stor lower, Kvikk higher); at most 6 bounce sounds per second total (drop the rest) | none | same |
-| Mirror bounce | Mirror face glints along its diagonal, 150 ms | Glassy "ting" | none | same |
-| **Ball hits growing wall** (pop) | Popped half bursts into 8-12 soft bubbles that drift and fade over 0.25 s; the ball squashes 10% for 80 ms | Soap-bubble "plip-plop" cluster, light and friendly, 250 ms, never a buzzer | 15 ms | No bubbles: the half fades out in 150 ms |
-| Spark lost (Vanlig) | One diamond cracks and falls, 300 ms | Small glassy crack, quiet | 15 ms | Diamond disappears |
-| Gentle restart (Vanlig) | Dim + walls and fill slide back out (4.4) | Soft tape-rewind whoosh, 1.2 s | none | Instant dim and reset |
-| **% milestone** (25/50/75% of target) | The notch on the meter lights up and the meter shimmers once, 300 ms | Short ascending chime, 3 notes, one step higher per milestone | none | Notch lights, no shimmer |
-| Token captured | Token flies to the meter, its effect icon appears on the balls or buttons | Snegl: slow descending "wob"; Lyn: crackle + rising zap; Skjold: hum-up with a bell | 15 ms | Token fades at its cell, no flight |
-| Cage closes | Bars slide down over the room, ball shrinks to 70% | Soft metallic "clunk-ding" + small happy arpeggio | 20 ms | Bars appear instantly |
-| **Level clear** | Balls freeze; time scale 0.3 for 0.5 s real time; the rest of the picture fades in over 0.8 s; each ball pops into a star that flies to the meter (staggered 120 ms apart); camera push-in 6%, shake 8 px for 200 ms | Music ducks to a filtered pad, then a 2 s bright win arpeggio with a warm pad and a sub hit | 40 ms | Freeze and picture fade kept, no flight, push-in or shake |
-| Win card | Star lands on the picture, 300 ms | Soft sparkle + spoken praise | none | Star appears |
-| Hint glow | Line and button glow at 1 Hz for 1.5 s | Faint shimmer | none | Static glow |
-| Level intro | Field frame draws itself around the edge, 0.8 s | Gentle rising swell | none | Cut |
+| UI tap (map, card, home, any disc) | Button presses to 94% in 80 ms, springs back 120 ms | `tap` -> `of_tap_1..3`: cockpit button click, tight tick + tiny glassy tone, 0.15 s, -4, spread 3%, on touch-down | 10 ms | No scale; button tints darker |
+| **Direction pick** (button release) | Chosen button rises and rings | `dir_pick` -> `of_dir_1..2`: servo turn, motor whirr gliding up a fifth then a soft stop tick, 0.33 s, -10; side-side plays one pentatonic step higher (x1.1225) | 10 ms | same |
+| Field touch-down (ghost appears) | Dotted ghost line fades in over 60 ms, origin dot | `tick_in` -> `of_tick_in`: quiet high soft pluck, 0.06 s, -10 | none | same |
+| Ghost moves one cell | Line slides to the new cell in 50 ms | `ghost_tick` -> `of_tick_in` at -20, spread 8%, max 10 per second | none | Line jumps, no slide |
+| Release while a wall grows | Ghost shrinks into its dot, 150 ms | `notyet` -> `of_notyet`: low muted blip, 0.11 s, -8 | none | Ghost just disappears |
+| **Wall start** | Origin cell lights up with a small ring burst (1 ring, 200 ms) | `wall_start` -> `of_laser_1..3`: soft laser fire, FM tone sweeping down onto the root + filtered air zap + light sub push, 0.52-0.55 s, -4 | 12 ms | Ring replaced by a steady glow |
+| **Wall grows** | Each new cell slides out of the previous one; bright tip on each half | Beam: `of_beam` on its own player: thin humming laser beam climbing one octave over 1.6 s, -18; fades out in 80 ms when the wall ends or both halves pop. Plus `grow_tick` -> `of_grow_tick_1..3` every 3rd cell per half, pitch +4% per tick, -20, max 10/s | none | Cells appear without slide; sound same |
+| **Wall complete** | Whole wall settles with a 120 ms shine pass along its length | `lock` -> `of_seal_1..2`: force-field seal, quick rising "zhoop", soft sub thunk, an energy bell that hums on, 0.93-1.0 s, -4 | 18 ms | No shine pass; wall brightens once |
+| **Area captured** | Crystal wave from the wall across the room over 300 ms, picture shows; one soft glow pulse | By room size (14 x 16 / 21 x 24 cells): small (< 14 / < 32) `capture_s` -> `of_capture_s_1..2`: 2-note sci-fi chime with a soft "bwip", 1.5 s, -3; medium `capture_m` -> `of_capture_m`: 3-note chime over a short whoosh, 2.1 s, -2; big (>= 40 / >= 90) `capture_l` -> `of_capture_l`: **rocket launch**, low rumble and whoosh rising into a 4-note crystal chime, 2.7 s, -1 | 20 ms | Room fills instantly with a 150 ms fade, no pulse |
+| **Ball bounce** (wall, stone, crystal) | Tiny spark at the contact point, 100 ms | `bounce` -> `of_sonar_1..4`: soft sonar blip with two dark echoes, 0.23 s, -20; pitch x(24 / radius) so Stor is lower and Kvikk higher; max 6 bounce sounds per second in total, the rest dropped | none | same |
+| Mirror bounce (W5-6) | Mirror face glints along its diagonal, 150 ms | **Not rendered yet.** Add `mirror` -> `of_mirror` to `render_sfx.py` before world 5: glassy ping, about 0.2 s, -14 (my call). Until then play `bounce` at pitch x1.5 | none | same |
+| **Ball hits growing wall** (pop) | Popped half bursts into 8-12 soft bubbles that drift and fade over 0.25 s; the ball squashes 10% for 80 ms | `pop` -> `of_fizzle_1..3`: energy-shield fizzle, friendly bubbly blips + a short electric sparkle that thins out, 0.42-0.47 s, -6, spread 6% | 15 ms | No bubbles: the half fades out in 150 ms |
+| Spark lost (Vanlig) | One diamond cracks and falls, 300 ms | `crack` -> `of_crack`: small glassy crack (Kenney CC0 glass layer, high-passed), 0.5 s, -12 | 15 ms | Diamond disappears |
+| Gentle restart (Vanlig) | Dim + walls and fill slide back out (4.4) | Beam stops, then `rewind` -> `of_rewind`: soft warp rewind, reversed bell, tone sliding down an octave with slowing wobble, 1.17 s, -5 | none | Instant dim and reset |
+| **% milestone** (25/50/75% of target) | The notch on the meter lights up and the meter shimmers once, 300 ms | `milestone` -> `of_comms`: radio comms double beep with a soft key-up squelch, 0.63 s, -6; one pentatonic step higher per milestone (x1.0, 1.12, 1.26) | none | Notch lights, no shimmer |
+| Token captured | Token flies to the meter, its effect icon appears on the balls or buttons | `snegl` -> `of_snegl`: time-warp whoosh (tone slides down, wobble slows 8 -> 2 Hz), 1.57 s, -3; while Snegl runs all effects play at pitch x0.94 and the music winds down and back over 0.5 s. `lyn` -> `of_lyn`: thruster boost, ignition puff + tone rising two octaves + bell, 1.29 s, -3. `skjold` -> `of_skjold`: shield power-up hum, warm chord swelling up + bell, 1.78 s, -4 | 15 ms | Token fades at its cell, no flight |
+| Cage closes (from L6) | Bars slide down over the room, ball shrinks to 70% | **No own file** (my call: none needed): `lock` at pitch x1.26 followed after 120 ms by the room's capture chime | 20 ms | Bars appear instantly |
+| **Level clear** | Balls freeze; time scale 0.3 for 0.5 s real time; the rest of the picture fades in over 0.8 s; each ball pops into a star that flies to the meter (staggered 120 ms apart); camera push-in 6%, shake 8 px for 200 ms | Beam stops, then `win` -> `of_win` (stereo): **a spaceship flies by left to right, then a warm fanfare chord with a rising bell arpeggio**, 4.0 s, -1; music ducks for 3.5 s (`stinger_started`) | 40 ms | Freeze and picture fade kept, no flight, push-in or shake |
+| Win card | Star lands on the picture, 300 ms | `star_land` -> `of_star_ping`: satellite ping, pure high ping with ring-mod sidebands and soft repeating echoes, 0.83 s, -7; then spoken praise (when recorded) | none | Star appears |
+| Hint glow | Line and button glow at 1 Hz for 1.5 s | `shimmer` -> `of_shimmer`: faint shimmer, 1.28 s, -16 | none | Static glow |
+| Level intro | Field frame draws itself around the edge, 0.8 s | `intro` -> `of_warp_in`: hyperspace warp-in, rising whoosh and stretching tone, then a drop out of warp onto a soft bell, 1.95 s, -13 | none | Cut, and no sound (as built) |
+| Ambient (during play) | none | `pass_by` -> `of_pass_1..2` (stereo): a spaceship passes left to right, doppler drop, 4.5 / 5.5 s, -16; once every 40-90 s at random (`AMBIENT_PASS_MIN_S / MAX_S`), only while a level is in play | none | same |
+| Uendelig round start | As level intro | `intro`; on the round where the field switches to 21 x 24 at pitch x0.84 | none | Cut |
+| Uendelig round clear / new best | As level clear; new best: gold ring pops onto the card's star, 300 ms | `win` as level clear; new best adds `milestone` at its top step (x2.0) then `star_land` 200 ms later | 40 ms | Ring appears |
 
 Flash safety: a global limiter allows at most 3 bright flashes per second (rule 37); extra events inside the same 333 ms get sound and particles but no glow spike. No full-screen flashes. No high-contrast moving or flickering stripes (rule 38): the grid and the cage bars are static and low contrast.
 
@@ -353,14 +465,15 @@ Flash safety: a global limiter allows at most 3 bright flashes per second (rule 
 | Aspect | Lett | Vanlig |
 |---|---|---|
 | Ball hits growing wall | Half pops, no cost ever | Half pops, costs 1 spark; empty bar + pop = gentle restart (W1 and breathers unlimited) |
-| Balls | 1-5 | 2-8 |
-| Ball speed | 200-240 px/s (2.8-3.3 cells/s) | 320-440 px/s |
+| Balls (levels) | 1-7 (+1 about every 4 levels) | 2-14 (+1 about every 2 levels) |
+| Ball speed | 200-265 px/s | 320-450 px/s |
+| Uendelig | +1 ball, +5 px/s per round, cap 10 balls / 245 | +1 ball, +10 px/s per round, cap 13 balls / 430 |
 | Wall speed | 14 cells/s per half | 10 cells/s per half |
 | Target | 60-68% | 70-75% |
-| Cage size | up to 12 cells | up to 8 cells |
+| Cage size | up to 12 cells (27 on 21 x 24) | up to 8 cells (18 on 21 x 24) |
 | Hint | after 7 s idle or 2 pops in 10 s | after 12 s idle |
 | Fill digits | none | small % digits |
-| Same 30 maps | yes | yes |
+| Same 30 maps | yes (one field per world) | yes |
 
 Rule 16 (no reflex demands at the easiest level) holds: in Lett a wall at 14 cells/s outruns a 200 px/s ball by 5x, and a pop costs nothing.
 
@@ -372,7 +485,7 @@ Same as MWM Neon Bricks (follow whatever the owner decides there): inside MWM Pl
 
 - Read `Engine.get_meta(&"mwm_play_shell")`: hide own home disc, own sound button and own settings gear.
 - `set_full_unlock(on: bool)` (default true), `set_difficulty(easy: bool)` (default Lett), `set_shell_inset(Vector2(232, 232))` (no-op: nothing sits there), plus the shell's four settings (sfx, music, haptics, less motion).
-- Signals up: `level_card_shown(level_id: int)`, `free_levels_finished()`.
+- Signals up: `level_card_shown(level_id: int)`, `endless_card_shown(round: int)` (Uendelig round card, 6.5; the adapter treats it like `level_card_shown`), `free_levels_finished()`.
 - Public `save_game()` for the adapter's `exit()`.
 - Unique class names with a `Orb Fence` prefix (no `Game`, `Main`, `Ball` bare names).
 
@@ -390,6 +503,10 @@ Slice acceptance hints for game-qa: Lett level 1 clears with no instruction (kid
 
 ## 14. Open questions for the owner
 
-1. **Vanlig cost for a popped wall:** I propose a spark budget of 3 per ball (max 24) and a gentle restart when it runs out (sim: restart on 5-28% of attempts, worlds 2-6). Alternatives: no cost in Vanlig either (no restart anywhere in the game), or a flat 3 like Neon Bricks' net (sim: 33-93% restarts, too harsh). Which?
-2. **Cage rule:** trapping a ball in a tiny room locks it up and removes it from play (from level 6). It is not part of the classic genre and makes later levels easier, but it rewards the most natural child goal, "catch the ball". Keep it?
-3. **Level length:** the sim bot clears world 1 in 11-22 s per level (a real young child maybe 20-60 s), so a sitting is many short wins with frequent win cards. Keep it short, or raise the targets (for example Lett 70%, Vanlig 80%) for longer levels?
+Answered 2026-10-07 (owner, final): Vanlig = 3 sparks per ball then gentle restart; cage rule from L6; targets 65 / 75%; more balls level by level; faster across worlds; Lett climbs slower; Uendelig with +1 ball and a speed step per round, best round saved, no game over.
+
+1. **Breather targets:** the breathers (L5, L10 ... L30) keep 60% Lett / 70% Vanlig from v1, under your 65 / 75%. Keep the softer breathers, or 65 / 75% on every level?
+2. **Lett on the finer field:** worlds 4-6 switch both settings to the 21 x 24 field (48 px cells, slightly smaller balls) so every level keeps one map. Lett alone would fit on 14 x 16 to the end (8 balls clear 100%, my calc), at the cost of two maps per level in worlds 4-6. One field per world (my pick), or keep Lett on the big cells?
+3. **Vanlig L28-29 (14 balls):** the sim restarts 45% of attempts there (13 balls: about 28%). Keep 14 as the finale peak, or stop at 13?
+4. **Uendelig unlock:** after level 5 (end of world 1, my pick), from the start, or after level 30?
+5. **Round number in Lett:** Uendelig shows the round as a digit in both settings (6.5). OK for 4-7, or a picture count (orbs) in Lett?
