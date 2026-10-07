@@ -62,6 +62,9 @@ var _turn_pulse_done: bool = false
 var _hand_line: Dictionary = {}
 var _hand_ghost: bool = false
 var _snegl_was_on: bool = false
+## Seconds until the next quiet ambient spaceship pass-by (GDD 9 addendum).
+var _ambient_t: float = 0.0
+var _rng := RandomNumberGenerator.new()
 
 
 func setup(
@@ -158,6 +161,8 @@ func start_level(id: int) -> void:
 	_hand_line = {}
 	_hand_ghost = false
 	_snegl_was_on = false
+	_rng.randomize()
+	_ambient_t = _next_ambient_s()
 	paused = false
 	_holdover_until_ms = Time.get_ticks_msec() + OfBalance.HOLDOVER_MS
 	OfDisc.block_input(OfBalance.HOLDOVER_MS)
@@ -238,6 +243,7 @@ func _process(_delta: float) -> void:
 			_idle_t = 0.0
 	if not _card_shown:
 		sim.step(game_dt)
+		_ambient(real_dt)
 	world.sync(sim, real_dt, game_dt)
 	world.sync_camera(real_dt)
 	hud.set_fill(sim.fill_ratio())
@@ -262,6 +268,21 @@ func _slowmo(real_dt: float) -> void:
 	else:
 		Engine.time_scale = 1.0
 		_slowmo_t = -1.0
+
+
+## A rare, very quiet spaceship flies past (left to right) while the level is
+## in play. OfSfx drops it when sound is off.
+func _ambient(real_dt: float) -> void:
+	if sim.state != OfSim.State.PLAY:
+		return
+	_ambient_t -= real_dt
+	if _ambient_t <= 0.0:
+		_ambient_t = _next_ambient_s()
+		sfx.play("pass_by")
+
+
+func _next_ambient_s() -> float:
+	return _rng.randf_range(OfBalance.AMBIENT_PASS_MIN_S, OfBalance.AMBIENT_PASS_MAX_S)
 
 
 func _update_snegl() -> void:
@@ -428,6 +449,7 @@ func _choose_dir(i: int) -> void:
 	if buttons.chosen == i:
 		return
 	buttons.chosen = i
+	sfx.play("dir_pick", 1.0 if i == 0 else 1.1225)
 	if _field_ptr >= 0 and _ghost_cell.x >= 0:
 		_show_ghost_for(_ghost_cell, false)
 
@@ -613,7 +635,7 @@ func _show_card() -> void:
 	_slowmo_t = -1.0
 	var nxt: int = OrbFence.next_level_after(level_id)
 	win_card.show_card(_picture, nxt != 0)
-	sfx.play("sparkle")
+	sfx.play("star_land")
 	OfDisc.block_input(OfBalance.HOLDOVER_MS)
 	OrbFence.level_card_shown.emit(level_id)
 	if not OrbFence.full_unlock and level_id == OfBalance.FREE_LEVELS:

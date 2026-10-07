@@ -38,7 +38,7 @@ The autoload `OrbFence` holds the hooks: `set_full_unlock(on)` (default `true`, 
 
 ## Sound
 
-Effects are synthesized by `tools/render_sfx.py` (soft plucks, glassy bells, airy sweeps, sub thumps; F# major pentatonic) with a few Kenney CC0 samples. The music is a long synthwave mix supplied by the game owner and kept low: at the default sliders the loudest effects peak near -12 dBFS and the music, in its loudest 20 s, peaks 6.4 dB under them (15.4 dB under in 400 ms loudness). `tools/audio_preview.py` reads the levels from the game code, renders `docs/audio_preview.ogg` (all effects over 20 s of music) and prints these numbers.
+Effects are space themed and synthesized by `tools/render_sfx.py` (soft laser zaps, a thin humming beam while a wall grows, force-field seals, sonar-blip bounces, shield fizzles, rocket and warp whooshes, comms beeps, a satellite ping, a spaceship flyby on level clear and a rare, very quiet ship passing left to right during play; F# major pentatonic; modern synthesis, not 8-bit) with one Kenney CC0 sample. The music is a long synthwave mix supplied by the game owner and kept low: at the default sliders the loudest effects peak near -12 dBFS and the music, in its loudest 20 s, peaks 6.2 dB under them (15.2 dB under in 400 ms loudness). `tools/audio_preview.py` reads the levels from the game code, renders `docs/audio_preview.ogg` (all effects over 20 s of music) and prints these numbers.
 
 ## Development
 

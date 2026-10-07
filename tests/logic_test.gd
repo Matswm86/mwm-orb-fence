@@ -11,6 +11,8 @@ extends Node
 ## 6. Ghost extent and nearest-empty ghost cell.
 ## 7. Flash limiter: 4 captures in a row -> at most 3 spikes per second.
 ## 8. Save round trip and full_unlock / free levels.
+## 9. Sound table: every effect file loads (incl. Lyn / Skjold for later
+##    worlds), the ambient pass-by gap is 40-90 s, sound off plays nothing.
 ## Prints "LOGIC TEST PASS" or "LOGIC TEST FAIL (n)" and exits 0 / 1.
 
 const SEEDS: int = 12
@@ -29,6 +31,7 @@ func _ready() -> void:
 	_test_ghost()
 	_test_flash_limiter()
 	_test_save()
+	_test_sounds()
 	if fails == 0:
 		print("LOGIC TEST PASS")
 	else:
@@ -262,3 +265,32 @@ func _test_save() -> void:
 	st.easy = keep_easy
 	st.music_volume = 0.6
 	st.save_game()
+
+
+func _test_sounds() -> void:
+	print("9. sound table")
+	var missing: Array[String] = []
+	var count: int = 0
+	for key: String in OfSfx.SOUNDS:
+		for file: String in OfSfx.SOUNDS[key][0]:
+			count += 1
+			if not ResourceLoader.exists(OfSfx.DIR + file + ".ogg"):
+				missing.append(file)
+	if not ResourceLoader.exists(OfSfx.DIR + OfSfx.ZIP_FILE + ".ogg"):
+		missing.append(OfSfx.ZIP_FILE)
+	_check(missing.is_empty(), "%d effect files all load (missing: %s)" % [count, missing])
+	for key: String in ["lyn", "skjold", "snegl", "pass_by", "dir_pick", "star_land"]:
+		_check(OfSfx.SOUNDS.has(key), "sound for '%s' is in the table" % key)
+	_check(
+		OfBalance.AMBIENT_PASS_MIN_S >= 40.0 and OfBalance.AMBIENT_PASS_MAX_S <= 90.0,
+		"ambient pass-by every 40-90 s"
+	)
+	var sfx := OfSfx.new()
+	add_child(sfx)
+	sfx.enabled = false
+	sfx.play("pass_by")
+	var any: bool = false
+	for p: AudioStreamPlayer in sfx._players:
+		any = any or p.playing
+	_check(not any, "sound off -> the pass-by does not play")
+	sfx.queue_free()

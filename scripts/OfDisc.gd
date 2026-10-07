@@ -15,6 +15,8 @@ const NEXT := Color(1.000, 0.788, 0.302)
 
 ## Touches are ignored until this tick (holdover after a screen change).
 static var block_until_ms: int = 0
+## Played on touch-down of every disc (GDD 9 UI tap); set by OfMain.
+static var tap_sound: Callable = Callable()
 
 @export var icon: String = "play"
 @export var disc_radius: float = 100.0
@@ -50,6 +52,8 @@ func _gui_input(event: InputEvent) -> void:
 	if mb.pressed:
 		_down = true
 		_press_t = 0.0
+		if tap_sound.is_valid():
+			tap_sound.call()
 		set_process(true)
 		queue_redraw()
 		accept_event()

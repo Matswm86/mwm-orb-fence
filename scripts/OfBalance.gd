@@ -91,6 +91,9 @@ const DRIFT_DEG: float = 1.0
 const DRIFT_PERIOD_S: float = 14.0
 const METER_EASE_S: float = 0.2
 const MILESTONES: Array[float] = [0.25, 0.5, 0.75]
+## Rare ambient spaceship pass-by during play, random gap in seconds.
+const AMBIENT_PASS_MIN_S: float = 40.0
+const AMBIENT_PASS_MAX_S: float = 90.0
 
 # --- Home guard (GDD 3.3, copies the MWM Play shell) ---
 const HOME_GUARD_S: float = 2.0

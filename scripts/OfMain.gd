@@ -37,6 +37,7 @@ func _ready() -> void:
 	music = OfMusic.new()
 	add_child(music)
 	sfx.stinger_started.connect(music.duck)
+	OfDisc.tap_sound = func() -> void: sfx.play("tap")
 	ui = CanvasLayer.new()
 	ui.layer = 10
 	add_child(ui)
@@ -74,6 +75,12 @@ func _ready() -> void:
 		open_level(1)
 	else:
 		open_map()
+
+
+## The static disc tap hook holds a lambda bound to this node; drop it before
+## the node goes, or Godot frees it twice at exit.
+func _exit_tree() -> void:
+	OfDisc.tap_sound = Callable()
 
 
 func _frame() -> Control:

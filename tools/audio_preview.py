@@ -24,13 +24,15 @@ SR = 44100
 ROOT = Path(__file__).resolve().parent.parent
 WINDOW_S = 20.0
 
-# (time s, sound name, pitch) - one short game: touch, wall, captures, pops, token, clear.
+# (time s, sound name, pitch) - one short game: touch, wall, captures, pops, tokens, a rare
+# ambient ship pass-by, clear. Lyn and Skjold are not in world 1 yet; they are here to be heard.
 SCHEDULE = [
     (0.4, "intro", 1.0),
     (1.6, "tap", 1.0),
     (2.2, "tick_in", 1.0),
     (2.45, "ghost_tick", 1.0),
     (2.6, "ghost_tick", 1.0),
+    (2.75, "dir_pick", 1.1225),
     (3.0, "wall_start", 1.0),
     (3.0, "ZIP", 1.0),
     (3.22, "grow_tick", 1.0),
@@ -39,6 +41,7 @@ SCHEDULE = [
     (3.95, "lock", 1.0),
     (4.0, "capture_m", 1.0),
     (4.5, "milestone", 1.0),
+    (5.0, "pass_by", 1.0),
     (5.6, "tick_in", 1.0),
     (6.0, "wall_start", 1.0),
     (6.0, "ZIP", 1.0),
@@ -51,8 +54,10 @@ SCHEDULE = [
     (9.65, "capture_l", 1.0),
     (10.1, "milestone", 1.1225),
     (10.2, "snegl", 1.0),
+    (11.2, "lyn", 1.0),
     (11.5, "crack", 1.0),
     (12.0, "rewind", 1.0),
+    (13.0, "skjold", 1.0),
     (13.6, "shimmer", 1.0),
     (14.4, "wall_start", 1.0),
     (14.4, "ZIP", 1.0),
@@ -60,7 +65,7 @@ SCHEDULE = [
     (15.35, "capture_s", 1.0),
     (15.8, "milestone", 1.2599),
     (16.3, "win", 1.0),
-    (18.4, "sparkle", 1.0),
+    (18.4, "star_land", 1.0),
 ]
 BOUNCE_EVERY_S = 0.55
 ZIP_LEN_S = 0.95
@@ -140,6 +145,28 @@ def loudest_window(path: Path) -> float:
     return float(np.argmax(e[:: low // 4]) * 0.25)
 
 
+def decode_sfx(path: Path) -> tuple[np.ndarray, float]:
+    """An effect file as mono (stereo files: (L + R) / 2, which is how loud a
+    centred sound plays next to a mono effect) plus its loudest-channel peak
+    in dBFS. ffmpeg's own -ac 1 sums L + R, 6 dB too hot for centred sound."""
+    ch = int(
+        subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries"]
+            + ["stream=channels", "-of", "csv=p=0", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    )
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-ar", str(SR), "-f", "f32le", "-"],
+        capture_output=True,
+        check=True,
+    ).stdout
+    x = np.frombuffer(raw, dtype=np.float32).astype(np.float64).reshape(-1, ch)
+    return x.mean(axis=1), db(float(np.max(np.abs(x))))
+
+
 def resample_pitch(x: np.ndarray, pitch: float) -> np.ndarray:
     if abs(pitch - 1.0) < 1e-3:
         return x
@@ -169,16 +196,20 @@ def main() -> None:
         t += BOUNCE_EVERY_S
     for at_s, name, pitch in sched:
         if name == "ZIP":
-            x = decode(ROOT / "assets/sfx/of_zip.ogg")[: int(ZIP_LEN_S * SR)].copy()
+            zf = re.search(r'const ZIP_FILE := "(\w+)"', (ROOT / "scripts/OfSfx.gd").read_text())
+            x = decode(ROOT / "assets/sfx" / f"{zf.group(1)}.ogg")[: int(ZIP_LEN_S * SR)].copy()
             x[-int(0.08 * SR) :] *= np.linspace(1.0, 0.0, int(0.08 * SR))
             g = lv["zip_db"] + sfx_gain_db
             key = "zip (riser)"
         else:
             files, level = lv["sounds"][name]
-            x = decode(ROOT / "assets/sfx" / f"{files[rng.integers(len(files))]}.ogg")
+            x, ch_peak = decode_sfx(ROOT / "assets/sfx" / f"{files[rng.integers(len(files))]}.ogg")
             x = resample_pitch(x, pitch)
             g = level + sfx_gain_db
             key = name
+            # Stereo files (ship pass-bys): the mono mix hides a hard-panned
+            # channel, so the peak also counts the loudest single channel.
+            peaks[key] = max(peaks.get(key, -200.0), ch_peak + g)
         x = x * 10 ** (g / 20.0)
         i = int(at_s * SR)
         fx[i : i + len(x)] += x

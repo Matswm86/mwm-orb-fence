@@ -1,9 +1,13 @@
 class_name OfSfx
 extends Node
 
-## Sound effects (GDD 9): pre-rendered .ogg files in res://assets/sfx/, made
-## by tools/render_sfx.py (own synthesis plus Kenney CC0 layers, see
-## CREDITS.md). One fixed pool of players, no allocation per event. Each play
+## Sound effects (GDD 9), space themed: pre-rendered .ogg files in
+## res://assets/sfx/, made by tools/render_sfx.py (own synthesis plus one
+## Kenney CC0 layer, see CREDITS.md). Keys are game events, files are the
+## sounds (wall_start = laser fire, the riser = humming beam, lock = force-
+## field seal, bounce = sonar blip, pop = shield fizzle, milestone = comms
+## beep, intro = warp-in, win = flyby + fanfare, pass_by = rare ambient
+## ship). One fixed pool of players, no allocation per event. Each play
 ## picks a random variant and a small random pitch shift so repeats do not
 ## tire the ear. The wall riser has its own player so it can stop when the
 ## wall ends. Ball bounces are rate-limited (at most 6 per second). Players
@@ -22,30 +26,34 @@ const PENTA: Array[float] = [1.0, 1.1225, 1.2599, 1.4983, 1.6818, 2.0]
 ## level in dB]. The files peak at -3 dBFS; tools/audio_preview.py reads
 ## this table to render docs/audio_preview.ogg at the default volumes.
 const SOUNDS: Dictionary = {
-	"tap": [["of_tap_1", "of_tap_2"], 0.03, -4.0],
+	"tap": [["of_tap_1", "of_tap_2", "of_tap_3"], 0.03, -4.0],
+	"dir_pick": [["of_dir_1", "of_dir_2"], 0.03, -10.0],
 	"tick_in": [["of_tick_in"], 0.04, -10.0],
 	"ghost_tick": [["of_tick_in"], 0.08, -20.0],
 	"notyet": [["of_notyet"], 0.0, -8.0],
-	"wall_start": [["of_wall_start"], 0.02, -3.0],
+	"wall_start": [["of_laser_1", "of_laser_2", "of_laser_3"], 0.02, -4.0],
 	"grow_tick": [["of_grow_tick_1", "of_grow_tick_2", "of_grow_tick_3"], 0.03, -20.0],
-	"lock": [["of_lock"], 0.02, -4.0],
-	"capture_s": [["of_capture_s"], 0.0, -3.0],
+	"lock": [["of_seal_1", "of_seal_2"], 0.02, -4.0],
+	"capture_s": [["of_capture_s_1", "of_capture_s_2"], 0.0, -3.0],
 	"capture_m": [["of_capture_m"], 0.0, -2.0],
 	"capture_l": [["of_capture_l"], 0.0, -1.0],
-	"bounce": [["of_bounce_1", "of_bounce_2", "of_bounce_3"], 0.04, -20.0],
-	"pop": [["of_pop_1", "of_pop_2", "of_pop_3"], 0.06, -6.0],
+	"bounce": [["of_sonar_1", "of_sonar_2", "of_sonar_3", "of_sonar_4"], 0.03, -20.0],
+	"pop": [["of_fizzle_1", "of_fizzle_2", "of_fizzle_3"], 0.06, -6.0],
 	"crack": [["of_crack"], 0.03, -12.0],
 	"rewind": [["of_rewind"], 0.0, -5.0],
-	"milestone": [["of_milestone"], 0.0, -5.0],
+	"milestone": [["of_comms"], 0.0, -6.0],
 	"snegl": [["of_snegl"], 0.0, -3.0],
+	"lyn": [["of_lyn"], 0.0, -3.0],
+	"skjold": [["of_skjold"], 0.0, -4.0],
 	"win": [["of_win"], 0.0, -1.0],
-	"sparkle": [["of_sparkle"], 0.0, -8.0],
+	"star_land": [["of_star_ping"], 0.0, -7.0],
 	"shimmer": [["of_shimmer"], 0.0, -16.0],
-	"intro": [["of_intro"], 0.0, -12.0],
+	"intro": [["of_warp_in"], 0.0, -13.0],
+	"pass_by": [["of_pass_1", "of_pass_2"], 0.04, -16.0],
 }
-const ZIP_FILE := "of_zip"
-const ZIP_DB: float = -14.0
-const WIN_DUCK_S: float = 3.0
+const ZIP_FILE := "of_beam"
+const ZIP_DB: float = -18.0
+const WIN_DUCK_S: float = 3.5
 ## Level of every effect before the player's slider: with the default
 ## slider (0.7) the loudest events peak near -12 dBFS (GDD 9).
 const BASE_DB: float = -5.0

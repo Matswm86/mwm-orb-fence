@@ -10,7 +10,7 @@ No Poly Haven, ambientCG or NASA assets are used. Third-party sounds are listed 
 ## Sound
 | Asset | Source | Licence |
 |---|---|---|
-| Sound effects in `assets/sfx/` | Own synthesis (`tools/render_sfx.py`), layered with two samples from Kenney Impact Sounds (https://kenney.nl/assets/impact-sounds): `impactPlate_light_000` (wall lock click) and `impactGlass_light_001` (spark crack) | Own work; Kenney samples CC0 |
+| Sound effects in `assets/sfx/` | Own synthesis (`tools/render_sfx.py`): the space set (lasers, beam hum, force-field seals, sonar blips, shield fizzles, rocket and warp whooshes, comms beeps, satellite ping, spaceship pass-bys) is made from scratch with FM, filtered noise, pitch sweeps, doppler pan, echo and reverb. One sample from Kenney Impact Sounds (https://kenney.nl/assets/impact-sounds), `impactGlass_light_001`, is layered into the spark crack | Own work; Kenney sample CC0 |
 | Background music `assets/music/orb_fence_theme.ogg` | Music supplied by the game owner. | Used with the owner's permission |
 
 ## Fonts
