@@ -188,11 +188,11 @@ static func draw_icon(ci: CanvasItem, name: String, c: Vector2, s: float, col: C
 
 
 ## Four-point sparkle (spark bar, DESIGN 4).
-static func sparkle_points(c: Vector2, r: float) -> PackedVector2Array:
+static func sparkle_points(c: Vector2, r: float, waist: float = 0.32) -> PackedVector2Array:
 	var pts := PackedVector2Array()
 	for i: int in 8:
 		var ang: float = -PI * 0.5 + TAU * float(i) / 8.0
-		var rr: float = r if i % 2 == 0 else r * 0.32
+		var rr: float = r if i % 2 == 0 else r * waist
 		pts.append(c + Vector2(cos(ang), sin(ang)) * rr)
 	return pts
 

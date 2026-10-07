@@ -4,8 +4,11 @@ extends Control
 ## Win card (GDD 8.4, DESIGN 4, wincard_mock.png): the scene blurred and
 ## dimmed behind a light card, the level's whole picture in a rounded ink
 ## frame, one big star landing on it, three icon discs (replay, map, gold
-## next). No text. Never auto-advances. Positions are in the 1080 x 1920
-## design frame; the owner places this control at the frame offset.
+## next). No text. Never auto-advances. Uendelig (GDD 6.5): the round card
+## shows the round as a big digit on the star and two discs, home (x 340)
+## and next (x 740); every 5th round the full card with the digit; a new
+## best adds a gold ring that pops onto the star. Positions are in the
+## 1080 x 1920 design frame; the owner places this control at the frame offset.
 
 signal replay_pressed
 signal map_pressed
@@ -21,6 +24,10 @@ const PIC_RECT := Rect2(150, 410, 780, 650)
 const STAR_C := Vector2(540, 1050)
 
 var less_motion: bool = false
+## Uendelig round shown on the star (0 = a normal level card).
+var round_k: int = 0
+var new_best: bool = false
+var _font: Font
 var _t: float = 0.0
 var _replay: OfDisc
 var _map: OfDisc
@@ -85,6 +92,7 @@ func _ready() -> void:
 	_replay = _disc("replay", Vector2(270, 1300), 100.0, OfDisc.WHITE)
 	_map = _disc("map", Vector2(540, 1300), 100.0, OfDisc.WHITE)
 	_next = _disc("next", Vector2(810, 1300), 120.0, OfDisc.NEXT)
+	_font = load("res://assets/fonts/Fredoka.ttf") as Font
 	_replay.tapped.connect(func() -> void: replay_pressed.emit())
 	_map.tapped.connect(func() -> void: map_pressed.emit())
 	_next.tapped.connect(func() -> void: next_pressed.emit())
@@ -104,13 +112,45 @@ func _disc(icon_name: String, c: Vector2, r: float, f: Color) -> OfDisc:
 
 
 func show_card(picture: Texture2D, has_next: bool) -> void:
-	_pic.texture = picture
+	round_k = 0
+	new_best = false
+	_map.icon = "map"
+	_replay.visible = true
 	_next.visible = has_next
 	# Without a next disc, replay and map sit centred as a pair.
 	var replay_x: float = 270.0 if has_next else 360.0
 	var map_x: float = 540.0 if has_next else 720.0
-	_replay.position.x = replay_x - _replay.size.x * 0.5
-	_map.position.x = map_x - _map.size.x * 0.5
+	_place(_replay, replay_x)
+	_place(_map, map_x)
+	_place(_next, 810.0)
+	_open(picture)
+
+
+## Uendelig: round card (home x 340 + next x 740) or, every 5th round, the
+## full card (replay, home, next) with the round digit on the star.
+func show_round_card(picture: Texture2D, k: int, best: bool, full: bool) -> void:
+	round_k = k
+	new_best = best
+	_map.icon = "home"
+	_replay.visible = full
+	_next.visible = true
+	if full:
+		_place(_replay, 270.0)
+		_place(_map, 540.0)
+		_place(_next, 810.0)
+	else:
+		_place(_map, 340.0)
+		_place(_next, 740.0)
+	_open(picture)
+
+
+func _place(d: OfDisc, x: float) -> void:
+	d.position.x = x - d.size.x * 0.5
+	d.queue_redraw()
+
+
+func _open(picture: Texture2D) -> void:
+	_pic.texture = picture
 	_t = 0.0
 	visible = true
 	modulate.a = 1.0 if less_motion else 0.0
@@ -145,7 +185,23 @@ func _draw_star(ci: Control) -> void:
 		if _t < 0.15:
 			return
 	var outer: float = 110.0 * sc
+	if new_best:
+		# Gold ring pops in over 300 ms once the star has landed.
+		var rk: float = clampf((_t - 0.45) / 0.3, 0.0, 1.0)
+		if less_motion:
+			rk = 1.0
+		if rk > 0.0:
+			var rs: float = lerpf(1.6, 1.0, rk) if not less_motion else 1.0
+			ci.draw_arc(STAR_C, 138.0 * rs, 0.0, TAU, 72, Color(GOLD, rk), 16.0, true)
+			ci.draw_arc(STAR_C, 138.0 * rs + 9.0, 0.0, TAU, 72, Color(INK, rk), 4.0, true)
 	var pts: PackedVector2Array = OfDisc.star_points(STAR_C, outer, outer * 0.46)
 	ci.draw_colored_polygon(pts, GOLD)
 	pts.append(pts[0])
 	ci.draw_polyline(pts, INK, 12.0, true)
+	if round_k > 0:
+		var fs: int = int((76.0 if round_k < 10 else 61.0) * sc)
+		var w: float = 200.0
+		var base := Vector2(STAR_C.x - w * 0.5, STAR_C.y + fs * 0.36)
+		var txt: String = str(round_k)
+		ci.draw_string_outline(_font, base, txt, HORIZONTAL_ALIGNMENT_CENTER, w, fs, 5, INK)
+		ci.draw_string(_font, base, txt, HORIZONTAL_ALIGNMENT_CENTER, w, fs, INK)

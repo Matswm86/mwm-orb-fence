@@ -14,6 +14,11 @@ extends Node
 ##   shell           - inside MWM Play: Engine meta set, set_full_unlock(false),
 ##                     levels 1-3 only, level 3 card has no "next" and emits
 ##                     free_levels_finished; own home disc and gear hidden
+##   worlds          - worlds 2-6: one level per world mid-capture (21 x 24
+##                     from world 4), Vanlig L29 spark bar (42), map pages
+##                     with the Uendelig disc, Uendelig HUD badge on round 9
+##                     (first 21 x 24 round), a round card with a new best
+##                     and the full card on round 10
 
 var out_dir: String = OS.get_environment("CAPTURE_DIR")
 var main: OfMain
@@ -39,6 +44,8 @@ func _ready() -> void:
 			await _phase_tall()
 		"shell":
 			await _phase_shell()
+		"worlds":
+			await _phase_worlds()
 		_:
 			await _phase_shots()
 	print(
@@ -128,7 +135,7 @@ func _phase_shots() -> void:
 	while play.sim.restart_count == 0 and t < 20.0:
 		if play.sim.can_start_wall() and play.sim.state == OfSim.State.PLAY:
 			var b: OfSim.Ball = play.sim.balls[0]
-			play.sim.start_wall(OfSim.cell_of(b.pos), true)
+			play.sim.start_wall(play.sim.cell_of(b.pos), true)
 			lost += 1
 		await _frames(2)
 		t += 0.05
@@ -269,6 +276,169 @@ func _hero_level3(play: OfPlay) -> void:
 			]
 		)
 	)
+
+
+## Autopilot until fill is in [lo, hi) with a wall growing; returns the
+## fill reached. Retries the level up to 6 times.
+func _mid_capture(start: Callable, lo: float, hi: float) -> float:
+	var play: OfPlay = main.play
+	var tries: int = 0
+	while tries < 6:
+		tries += 1
+		start.call()
+		play.autopilot = true
+		Engine.time_scale = 2.0
+		await _wait_s(0.5)
+		var ok: bool = await _until(
+			func() -> bool:
+				return (
+					play.sim.fill_ratio() >= lo
+					and play.sim.wall != null
+					and play.sim.wall.age > 0.06
+					and play.sim.state == OfSim.State.PLAY
+				),
+			40.0
+		)
+		if ok and play.sim.fill_ratio() < hi:
+			break
+	play.autopilot = false
+	Engine.time_scale = 1.0
+	await _frames(1)
+	return play.sim.fill_ratio()
+
+
+func _phase_worlds() -> void:
+	var play: OfPlay = main.play
+	OrbFence.easy = true
+	var picks: Array = [[8, true], [13, true], [18, true], [22, true], [24, false], [28, true]]
+	for pk: Array in picks:
+		var id: int = pk[0]
+		OrbFence.easy = bool(pk[1])
+		var fill: float = await _mid_capture(func() -> void: main.open_level(id), 0.3, 0.6)
+		var w: int = OfLevels.world_of(id)
+		await _shot("20_w%d_L%d_%s_mid" % [w, id, "lett" if OrbFence.easy else "vanlig"])
+		if OS.get_environment("CAPTURE_DEBUG") != "":
+			Engine.time_scale = 0.01
+			await _wait_s(0.6)
+			await _shot("20_w%d_L%d_later" % [w, id])
+			Engine.time_scale = 1.0
+		var caged: int = 0
+		for b: OfSim.Ball in play.sim.balls:
+			caged += 1 if b.caged else 0
+		print(
+			(
+				"L%d %s: field %s, fill %.0f%% of %d, balls %d (caged %d), tokens %d, mirrors turned %d"
+				% [
+					id,
+					"Lett" if OrbFence.easy else "Vanlig",
+					play.sim.field,
+					fill * 100.0,
+					play.sim.counted_total,
+					play.sim.balls.size(),
+					caged,
+					play.sim.tokens.size(),
+					play.sim.mirror_turns
+				]
+			)
+		)
+		if play.sim.wall != null:
+			var wl: OfSim.Wall = play.sim.wall
+			print(
+				(
+					"  wall origin %s vertical %s fast %s shielded %s halves %d/%d cells"
+					% [
+						wl.origin,
+						wl.vertical,
+						wl.fast,
+						wl.shielded,
+						wl.halves[0].cells.size(),
+						wl.halves[1].cells.size()
+					]
+				)
+			)
+		_check("L%d grid %s" % [id, play.sim.field], play.sim.field == OfLevels.field_of(id))
+	# Vanlig L29: 14 balls and the 42-spark bar after a few pops.
+	OrbFence.easy = false
+	main.open_level(29)
+	await _wait_s(0.6)
+	var spent: int = 0
+	var t: float = 0.0
+	while play.sim.sparks_left > 38 and t < 10.0:
+		if play.sim.can_start_wall():
+			var b: OfSim.Ball = play.sim.balls[3]
+			play.sim.start_wall(play.sim.cell_of(b.pos), true)
+			spent += 1
+		await _frames(2)
+		t += 0.04
+	await _wait_s(0.4)
+	await _shot("21_w6_L29_vanlig_sparks")
+	print(
+		(
+			"L29 Vanlig sparks %d of %d, balls %d"
+			% [play.sim.sparks_left, play.sim.spark_budget, play.sim.balls.size()]
+		)
+	)
+	_check("L29 Vanlig budget 42", play.sim.spark_budget == 42)
+	# Map pages with the Uendelig disc (level 5 cleared, best round 7 Lett).
+	OrbFence.easy = true
+	OrbFence.cleared = [1, 2, 3, 4, 5]
+	OrbFence.endless_best = {"lett": 7, "vanlig": 0}
+	main.open_map()
+	await _wait_s(0.6)
+	main.map.show_page(2)
+	await _wait_s(0.6)
+	await _shot("22_map_world2_endless_disc")
+	_check("Uendelig disc shown after level 5", main.map.endless.visible)
+	main.map.show_page(6)
+	await _wait_s(0.6)
+	await _shot("23_map_world6")
+	# Uendelig round 9 (Lett): first 21 x 24 round, badge in the HUD.
+	main.open_endless()
+	play.start_endless(8)
+	var fill9: float = await _mid_capture(func() -> void: play.start_endless(9), 0.25, 0.6)
+	await _shot("24_endless_r9_lett_mid")
+	print(
+		(
+			"Uendelig round %d: field %s, balls %d, speed %.0f, fill %.0f%%"
+			% [
+				play.endless_round,
+				play.sim.field,
+				play.sim.balls.size(),
+				play.sim.ball_speed,
+				fill9 * 100.0
+			]
+		)
+	)
+	_check("round 9 Lett on 21 x 24", play.sim.field == "21x24" and play.sim.balls.size() == 9)
+	# Clear it: new best (9 > 7) -> round card with the gold ring.
+	var shown: Array[int] = []
+	OrbFence.endless_card_shown.connect(func(k: int) -> void: shown.append(k))
+	play.autopilot = true
+	Engine.time_scale = 3.0
+	await _until(func() -> bool: return play.card_visible(), 120.0)
+	Engine.time_scale = 1.0
+	await _wait_s(1.0)
+	await _shot("25_endless_round_card_new_best")
+	print("round card: endless_card_shown=%s best=%d" % [shown, OrbFence.best_round(true)])
+	_check("endless_card_shown(9) emitted", shown == [9])
+	_check("best round saved as 9", OrbFence.best_round(true) == 9)
+	# Next -> round 10 (cap), clear -> full card (every 5th round).
+	play.win_card.next_pressed.emit()
+	await _wait_s(0.3)
+	_check("next starts round 10", play.endless_round == 10)
+	Engine.time_scale = 3.0
+	await _until(func() -> bool: return play.card_visible(), 150.0)
+	Engine.time_scale = 1.0
+	await _wait_s(1.0)
+	await _shot("26_endless_round10_full_card")
+	# Vanlig Uendelig HUD: badge + best star + spark bar on the short meter.
+	OrbFence.easy = false
+	OrbFence.endless_best = {"lett": 9, "vanlig": 5}
+	play.autopilot = false
+	play.start_endless(6)
+	await _wait_s(1.2)
+	await _shot("27_endless_r6_vanlig_hud")
+	OrbFence.easy = true
 
 
 func _phase_inset() -> void:

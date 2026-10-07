@@ -11,6 +11,8 @@ const CRYSTAL := Color(0.498, 0.714, 1.000)
 const GOLD := Color(1.000, 0.788, 0.302)
 
 var level_id: int = 1
+## The world's crystal tint (DESIGN 2c).
+var tint: Color = CRYSTAL
 var picture: Texture2D
 var cleared: bool = false
 var suggested: bool = false
@@ -34,8 +36,8 @@ func _draw() -> void:
 	var k: float = 0.94 if pressed else 1.0
 	var c: Vector2 = center()
 	var r: float = disc_radius * k
-	draw_circle(c, r + 14.0, Color(CRYSTAL, 0.14))
-	draw_circle(c, r, CRYSTAL)
+	draw_circle(c, r + 14.0, Color(tint, 0.14))
+	draw_circle(c, r, tint)
 	if picture != null:
 		var pts := PackedVector2Array()
 		var uvs := PackedVector2Array()

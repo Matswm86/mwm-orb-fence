@@ -1,11 +1,11 @@
 class_name OfPlay
 extends Node
 
-## One level in play: owns the OfSim, reads touches (direction buttons;
-## press-see-release ghost wall in the field with snap and hysteresis),
-## feeds sim events to OfWorld, OfSfx, the HUD, the 2D effects and the flash
-## limiter, runs the hint rule and the onboarding hand, the level-clear
-## sequence and the win card (GDD 3, 8, 9).
+## One level or Uendelig round in play: owns the OfSim, reads touches
+## (direction buttons; press-see-release ghost wall in the field with snap
+## and hysteresis), feeds sim events to OfWorld, OfSfx, the HUD, the 2D
+## effects and the flash limiter, runs the hint rule and the onboarding hand,
+## the level-clear sequence and the win / round card (GDD 3, 6.5, 8, 9).
 
 signal map_requested
 signal level_started(id: int)
@@ -21,6 +21,8 @@ var world: OfWorld
 var sfx: OfSfx
 var music: OfMusic
 var level_id: int = 1
+## Uendelig round in play; 0 = a normal level.
+var endless_round: int = 0
 var active: bool = false
 var paused: bool = false
 
@@ -62,6 +64,12 @@ var _turn_pulse_done: bool = false
 var _hand_line: Dictionary = {}
 var _hand_ghost: bool = false
 var _snegl_was_on: bool = false
+## Field of the previous Uendelig round (the warp-in drops in pitch when the
+## field switches to 21 x 24, GDD 9).
+var _prev_field: String = ""
+var _new_best: bool = false
+## Delayed sounds: [real seconds left, key, pitch] (cage chime after lock).
+var _later: Array[Array] = []
 ## Seconds until the next quiet ambient spaceship pass-by (GDD 9 addendum).
 var _ambient_t: float = 0.0
 var _rng := RandomNumberGenerator.new()
@@ -95,7 +103,7 @@ func setup(
 	top_frame.add_child(hud)
 	win_card = OfWinCard.new()
 	center_frame.add_child(win_card)
-	win_card.replay_pressed.connect(func() -> void: start_level(level_id))
+	win_card.replay_pressed.connect(_on_replay)
 	win_card.map_pressed.connect(func() -> void: map_requested.emit())
 	win_card.next_pressed.connect(_on_next)
 	resume_disc = OfDisc.new()
@@ -118,24 +126,47 @@ func show_hud(on: bool) -> void:
 
 func start_level(id: int) -> void:
 	level_id = id
+	endless_round = 0
+	_prev_field = ""
 	level_started.emit(id)
+	_start(OfLevels.config(id, OrbFence.easy))
+
+
+## Uendelig round k (GDD 6.5). Round 1 starts a new run.
+func start_endless(k: int) -> void:
+	level_id = 0
+	if k <= 1:
+		_prev_field = ""
+	endless_round = maxi(k, 1)
+	level_started.emit(0)
+	_start(OfLevels.endless_config(endless_round, OrbFence.easy))
+
+
+func _start(c: Dictionary) -> void:
 	var easy: bool = OrbFence.easy
 	var lm: bool = OrbFence.less_motion
 	sim = OfSim.new()
 	sim.rng.randomize()
-	sim.setup(id, easy, test_sparks)
+	sim.setup_config(c, easy, test_sparks)
 	_connect_sim()
-	_picture = OfLevels.picture(id)
+	_picture = load(String(c["picture"])) as Texture2D
 	world.show_gameplay(true)
 	world.set_less_motion(lm)
-	world.bind_level(sim, _picture)
+	world.bind_level(sim, _picture, int(c["world"]))
 	world.start_intro()
 	world.reset_camera_fx()
 	hud.less_motion = lm
 	hud.reset(sim.target, not easy, sim.spark_budget)
+	hud.set_tint(OfLevels.world(int(c["world"]))["tint"])
+	if endless_round > 0:
+		hud.set_endless(endless_round, OrbFence.best_round(easy), _limiter.allow(_clock_s))
+	else:
+		hud.set_endless(0, 0, false)
 	buttons.less_motion = lm
 	buttons.chosen = 0
+	buttons.lyn_charges = 0
 	fx.less_motion = lm
+	fx.cell = sim.cell
 	fx.clear_all()
 	win_card.less_motion = lm
 	win_card.hide_card()
@@ -161,6 +192,8 @@ func start_level(id: int) -> void:
 	_hand_line = {}
 	_hand_ghost = false
 	_snegl_was_on = false
+	_new_best = false
+	_later.clear()
 	_rng.randomize()
 	_ambient_t = _next_ambient_s()
 	paused = false
@@ -169,7 +202,9 @@ func start_level(id: int) -> void:
 	active = true
 	set_process(true)
 	if not lm:
-		sfx.play("intro")
+		var switched: bool = endless_round > 0 and _prev_field == "14x16" and sim.field == "21x24"
+		sfx.play("intro", OfBalance.ENDLESS_SWITCH_PITCH if switched else 1.0)
+	_prev_field = sim.field
 	if OrbFence.first_launch:
 		OrbFence.first_launch = false
 		OrbFence.save_game()
@@ -201,7 +236,9 @@ func _connect_sim() -> void:
 	sim.wall_finished.connect(_on_wall_finished)
 	sim.wall_vanished.connect(_on_wall_vanished)
 	sim.captured.connect(_on_captured)
+	sim.caged.connect(_on_caged)
 	sim.ball_bounced.connect(_on_bounce)
+	sim.mirror_bounced.connect(_on_mirror)
 	sim.token_taken.connect(_on_token)
 	sim.milestone_reached.connect(_on_milestone)
 	sim.spark_lost.connect(_on_spark_lost)
@@ -215,8 +252,8 @@ static func field_px(p: Vector2) -> Vector2:
 	return p + OfBalance.FIELD_ORIGIN
 
 
-static func cell_px(c: Vector2i) -> Vector2:
-	return field_px(OfSim.cell_center(c))
+func cell_px(c: Vector2i) -> Vector2:
+	return field_px(sim.cell_center(c))
 
 
 ## The meter star in bottom-frame px (it lives in the top frame).
@@ -244,6 +281,9 @@ func _process(_delta: float) -> void:
 	if not _card_shown:
 		sim.step(game_dt)
 		_ambient(real_dt)
+	buttons.lyn_charges = sim.lyn_charges
+	fx.shield_ghost = sim.shield_ready
+	_run_later(real_dt)
 	world.sync(sim, real_dt, game_dt)
 	world.sync_camera(real_dt)
 	hud.set_fill(sim.fill_ratio())
@@ -279,6 +319,14 @@ func _ambient(real_dt: float) -> void:
 	if _ambient_t <= 0.0:
 		_ambient_t = _next_ambient_s()
 		sfx.play("pass_by")
+
+
+func _run_later(dt: float) -> void:
+	for item: Array in _later:
+		item[0] = float(item[0]) - dt
+		if float(item[0]) <= 0.0:
+			sfx.play(String(item[1]), float(item[2]))
+	_later = _later.filter(func(item: Array) -> bool: return float(item[0]) > 0.0)
 
 
 func _next_ambient_s() -> float:
@@ -472,7 +520,7 @@ func _move_ghost() -> void:
 			_show_ghost_for(c0, true)
 		return
 	var f: Vector2 = _field_pos - OfBalance.FIELD_ORIGIN
-	var cell: float = OfBalance.CELL
+	var cell: float = sim.cell
 	var hy: float = OfBalance.GHOST_HYSTERESIS * cell
 	var cur: Vector2i = _ghost_cell
 	var nx: int = cur.x
@@ -487,7 +535,7 @@ func _move_ghost() -> void:
 		ny = maxi(cur.y, floori((f.y - hy) / cell))
 	elif fy_i < cur.y:
 		ny = mini(cur.y, floori((f.y + hy) / cell))
-	var want := Vector2i(clampi(nx, 0, OfSim.COLS - 1), clampi(ny, 0, OfSim.ROWS - 1))
+	var want := Vector2i(clampi(nx, 0, sim.cols - 1), clampi(ny, 0, sim.rows - 1))
 	if want == cur:
 		return
 	var c: Vector2i = want
@@ -563,10 +611,32 @@ func _on_wall_vanished() -> void:
 func _on_captured(cells: Array[Vector2i], delays: PackedFloat32Array) -> void:
 	var spike: bool = _limiter.allow(_clock_s)
 	world.on_captured(sim, cells, delays, spike)
-	sfx.capture(cells.size())
+	sfx.capture(cells.size(), int(sim.grid_value("capture_m")), int(sim.grid_value("capture_l")))
 	if level_id == 1 and not _turn_pulse_done:
 		_turn_pulse_done = true
 		buttons.glow(1, OfBalance.TURN_PULSE_S)
+
+
+## Cage closes (GDD 9): lock at x1.26, then the room's capture chime 120 ms
+## later; bars slide down over the room, its balls shrink and stop.
+func _on_caged(cells: Array[Vector2i], _balls: Array[int]) -> void:
+	world.on_caged(sim, cells)
+	var pts: Array[Vector2] = []
+	for c: Vector2i in cells:
+		pts.append(cell_px(c))
+	fx.add_cage(pts)
+	sfx.play("lock", OfBalance.CAGE_LOCK_PITCH)
+	var key: String = sfx.capture_key(
+		cells.size(), int(sim.grid_value("capture_m")), int(sim.grid_value("capture_l"))
+	)
+	_later.append([OfBalance.CAGE_CHIME_DELAY_S, key, 1.0])
+
+
+func _on_mirror(i: int, c: Vector2i) -> void:
+	if i < sim.balls.size():
+		sfx.mirror(sim.balls[i].radius)
+	if not OrbFence.less_motion:
+		fx.mirror_glint(cell_px(c), sim.mirror_at(c))
 
 
 func _on_bounce(i: int, pos: Vector2) -> void:
@@ -578,6 +648,8 @@ func _on_bounce(i: int, pos: Vector2) -> void:
 func _on_token(kind: String, cell: Vector2i) -> void:
 	world.on_token_taken(cell)
 	sfx.play(kind)
+	if kind == "lyn":
+		buttons.lyn_charges = sim.lyn_charges
 	if OrbFence.less_motion:
 		return
 	fx.fly(kind, cell_px(cell), star_in_bottom(), 0.0, 0.5)
@@ -603,6 +675,7 @@ func _on_restart() -> void:
 
 func _on_restart_reset() -> void:
 	hud.reset(sim.target, not sim.easy, sim.spark_budget)
+	fx.clear_cages()
 
 
 func _on_cleared() -> void:
@@ -625,7 +698,10 @@ func _on_cleared() -> void:
 				0.15 + i * OfBalance.CLEAR_STAR_STAGGER_S,
 				0.6
 			)
-	OrbFence.mark_cleared(level_id)
+	if endless_round > 0:
+		_new_best = OrbFence.report_round(sim.easy, endless_round)
+	else:
+		OrbFence.mark_cleared(level_id)
 	_card_t = 0.0
 
 
@@ -633,6 +709,9 @@ func _show_card() -> void:
 	_card_shown = true
 	Engine.time_scale = 1.0
 	_slowmo_t = -1.0
+	if endless_round > 0:
+		_show_round_card()
+		return
 	var nxt: int = OrbFence.next_level_after(level_id)
 	win_card.show_card(_picture, nxt != 0)
 	sfx.play("star_land")
@@ -642,10 +721,35 @@ func _show_card() -> void:
 		OrbFence.free_levels_finished.emit()
 
 
+## Uendelig round card (GDD 6.5): picture, round digit on the gold star,
+## home + next; every 5th round the full win card. New best: a gold ring
+## pops onto the star, comms beep at its top step, then the satellite ping.
+func _show_round_card() -> void:
+	var full: bool = endless_round % OfBalance.ENDLESS_FULL_CARD_EVERY == 0
+	win_card.show_round_card(_picture, endless_round, _new_best, full)
+	if _new_best:
+		sfx.play("milestone", 2.0)
+		_later.append([0.2, "star_land", 1.0])
+	else:
+		sfx.play("star_land")
+	OfDisc.block_input(OfBalance.HOLDOVER_MS)
+	OrbFence.endless_card_shown.emit(endless_round)
+
+
 func _on_next() -> void:
+	if endless_round > 0:
+		start_endless(endless_round + 1)
+		return
 	var nxt: int = OrbFence.next_level_after(level_id)
 	if nxt != 0:
 		start_level(nxt)
+
+
+func _on_replay() -> void:
+	if endless_round > 0:
+		start_endless(endless_round)
+	else:
+		start_level(level_id)
 
 
 # ---------------------------------------------------------------- pause

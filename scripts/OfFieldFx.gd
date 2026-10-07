@@ -2,18 +2,27 @@ class_name OfFieldFx
 extends Control
 
 ## 2D effects drawn over the 3D field in the bottom-anchored frame (frame
-## px): the ghost wall, the hint line, pop bubbles, bounce sparks, the
-## Snegl token flying to the meter, the level-clear stars and the onboarding
-## hand. Never takes touches.
+## px): the ghost wall (hexagons while a Skjold waits), the hint line, pop
+## bubbles, bounce sparks, mirror glints, cage bars, tokens flying to the
+## meter, the level-clear stars and the onboarding hand. Never takes touches.
 
 const WHITE := Color(1.0, 1.0, 1.0)
 const GOLD := Color(1.000, 0.788, 0.302)
 const INK := Color(0.141, 0.129, 0.114)
 const BUBBLE := Color(0.902, 0.965, 1.000)
 const SNEGL := Color(0.361, 0.949, 0.722)
+const LYN := Color(0.424, 0.816, 1.000)
+const SKJOLD := Color(0.718, 0.612, 1.000)
+const MIRROR_FACE := Color(0.910, 0.984, 1.000)
+const CAGE_BAR := Color(0.788, 0.827, 0.902)
 const DOT_STEP: float = 24.0
+const GLINT_S: float = 0.15
 
 var less_motion: bool = false
+## Cell size of the level in play (72 or 48 px).
+var cell: float = 72.0
+## Skjold waits: the ghost is drawn with small hexagons (DESIGN 7b).
+var shield_ghost: bool = false
 var hand_visible: bool = false
 var hand_at: Vector2 = Vector2.ZERO
 
@@ -33,6 +42,11 @@ var _hint_t: float = 9.0
 var _bubbles: Array[Dictionary] = []
 var _sparks: Array[Dictionary] = []
 var _flyers: Array[Dictionary] = []
+## Caged rooms: rects of the caged cells (frame px), static bars.
+var _cage_rects: Array[Rect2] = []
+var _cage_t: float = 9.0
+## Mirror glints: centre (frame px), "/" (+1) or "\\" (-1), age.
+var _glints: Array[Dictionary] = []
 
 var _hand_t: float = 0.0
 var _rng := RandomNumberGenerator.new()
@@ -52,6 +66,9 @@ func clear_all() -> void:
 	_bubbles.clear()
 	_sparks.clear()
 	_flyers.clear()
+	_cage_rects.clear()
+	_glints.clear()
+	shield_ghost = false
 	hand_visible = false
 
 
@@ -110,6 +127,24 @@ func pop_bubbles(points: Array[Vector2]) -> void:
 			)
 
 
+## Cage closed over these cells (frame px centres). Bars slide down over
+## 0.3 s, or appear at once under "less motion" (GDD 9).
+func add_cage(centres: Array[Vector2]) -> void:
+	var h: float = cell * 0.5
+	for c: Vector2 in centres:
+		_cage_rects.append(Rect2(c - Vector2(h, h), Vector2(cell, cell)))
+	_cage_t = 0.3 if less_motion else 0.0
+
+
+func clear_cages() -> void:
+	_cage_rects.clear()
+
+
+func mirror_glint(c: Vector2, kind: int) -> void:
+	if _glints.size() < 8:
+		_glints.append({"p": c, "k": kind, "t": 0.0})
+
+
 func spark(p: Vector2) -> void:
 	if _sparks.size() < 12:
 		_sparks.append({"p": p, "t": 0.0})
@@ -140,6 +175,10 @@ func _process(delta: float) -> void:
 	for s: Dictionary in _sparks:
 		s["t"] = float(s["t"]) + delta
 	_sparks = _sparks.filter(func(s: Dictionary) -> bool: return float(s["t"]) < 0.1)
+	_cage_t += delta
+	for g: Dictionary in _glints:
+		g["t"] = float(g["t"]) + delta
+	_glints = _glints.filter(func(g: Dictionary) -> bool: return float(g["t"]) < GLINT_S)
 	for f: Dictionary in _flyers:
 		f["t"] = float(f["t"]) + delta
 	_flyers = _flyers.filter(
@@ -149,6 +188,8 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	_draw_cages()
+	_draw_glints()
 	_draw_hint()
 	_draw_ghost()
 	for b: Dictionary in _bubbles:
@@ -175,10 +216,19 @@ func _draw() -> void:
 		var a: Vector2 = f["a"]
 		var b: Vector2 = f["b"]
 		var p: Vector2 = a.lerp(b, e) + Vector2(0.0, -140.0 * sin(PI * e))
-		if String(f["kind"]) == "snegl":
+		var kind: String = String(f["kind"])
+		if kind == "snegl":
 			draw_circle(p, 30.0, SNEGL)
 			draw_arc(p, 30.0, 0.0, TAU, 32, WHITE, 4.0, true)
 			_spiral(p, 18.0)
+		elif kind == "lyn":
+			draw_circle(p, 30.0, LYN)
+			draw_arc(p, 30.0, 0.0, TAU, 32, WHITE, 4.0, true)
+			draw_polyline(bolt_points(p, 18.0), WHITE, 4.0, true)
+		elif kind == "skjold":
+			draw_circle(p, 30.0, SKJOLD)
+			draw_arc(p, 30.0, 0.0, TAU, 32, WHITE, 4.0, true)
+			draw_polyline(hex_points(p, 16.0, true), WHITE, 4.0, true)
 		else:
 			var sc: float = lerpf(1.0, 0.55, e)
 			var pts: PackedVector2Array = OfDisc.star_points(p, 34.0 * sc, 15.0 * sc)
@@ -187,6 +237,51 @@ func _draw() -> void:
 			draw_polyline(pts, INK, 3.0, true)
 	if hand_visible:
 		_draw_hand()
+
+
+## Zigzag bolt (Lyn icon) as an open polyline.
+static func bolt_points(c: Vector2, s: float) -> PackedVector2Array:
+	return PackedVector2Array(
+		[
+			c + Vector2(0.35, -1.0) * s,
+			c + Vector2(-0.3, 0.05) * s,
+			c + Vector2(0.3, -0.05) * s,
+			c + Vector2(-0.35, 1.0) * s,
+		]
+	)
+
+
+static func hex_points(c: Vector2, r: float, closed: bool) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i: int in 6:
+		var a: float = TAU * float(i) / 6.0
+		pts.append(c + Vector2(cos(a), sin(a)) * r)
+	if closed:
+		pts.append(pts[0])
+	return pts
+
+
+## Static vertical bars over each caged cell, low contrast (rule 38).
+func _draw_cages() -> void:
+	if _cage_rects.is_empty():
+		return
+	var k: float = clampf(_cage_t / 0.3, 0.0, 1.0)
+	var col := Color(CAGE_BAR, 0.75)
+	var bars: int = 3
+	for r: Rect2 in _cage_rects:
+		var bottom: float = r.position.y + r.size.y * k
+		for i: int in bars:
+			var x: float = r.position.x + r.size.x * (float(i) + 0.5) / float(bars)
+			draw_line(Vector2(x, r.position.y), Vector2(x, bottom), col, 4.0)
+
+
+func _draw_glints() -> void:
+	for g: Dictionary in _glints:
+		var a: float = 1.0 - float(g["t"]) / GLINT_S
+		var c: Vector2 = g["p"]
+		var h: float = cell * 0.42
+		var d := Vector2(h, -h) if int(g["k"]) > 0 else Vector2(h, h)
+		draw_line(c - d, c + d, Color(MIRROR_FACE, 0.9 * a), 6.0, true)
 
 
 func _spiral(c: Vector2, r: float) -> void:
@@ -208,15 +303,18 @@ func _dots(cells: Array[Vector2], vertical: bool, col: Color, rad: float, shrink
 		var v: float = c.dot(axis)
 		lo = minf(lo, v)
 		hi = maxf(hi, v)
-	lo -= OfBalance.CELL * 0.5 - 10.0
-	hi += OfBalance.CELL * 0.5 - 10.0
+	lo -= cell * 0.5 - 10.0
+	hi += cell * 0.5 - 10.0
 	var o: float = ghost_origin.dot(axis)
 	var perp: Vector2 = ghost_origin - axis * o
 	var v: float = lo
 	while v <= hi + 0.1:
 		if absf(v - o) > 26.0:
 			var pv: float = lerpf(v, o, shrink)
-			draw_circle(perp + axis * pv, rad, col)
+			if shield_ghost:
+				draw_polyline(hex_points(perp + axis * pv, rad + 3.0, true), col, 2.5, true)
+			else:
+				draw_circle(perp + axis * pv, rad, col)
 		v += DOT_STEP
 
 
@@ -249,7 +347,7 @@ func _draw_hint() -> void:
 	var first: Vector2 = _hint_cells[0]
 	var last: Vector2 = _hint_cells[_hint_cells.size() - 1]
 	var axis: Vector2 = (last - first).normalized() if last != first else Vector2(0.0, 1.0)
-	var ext: float = OfBalance.CELL * 0.5 - 6.0
+	var ext: float = cell * 0.5 - 6.0
 	draw_line(first - axis * ext, last + axis * ext, Color(GOLD, 0.22 * a), 34.0, true)
 	draw_line(first - axis * ext, last + axis * ext, Color(GOLD, 0.75 * a), 8.0, true)
 

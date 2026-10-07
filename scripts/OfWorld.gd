@@ -1,3 +1,4 @@
+# gdlint: disable=max-file-lines
 class_name OfWorld
 extends Node3D
 
@@ -19,7 +20,16 @@ const CRYSTAL_W1 := Color(0.498, 0.714, 1.000)
 const BEAM := Color(1.000, 0.788, 0.302)
 const ORB_SHELL := Color(1.000, 0.435, 0.380)
 const STONE := Color(0.420, 0.369, 0.341)
+const MIRROR_FACE := Color(0.910, 0.984, 1.000)
 const SNEGL := Color(0.361, 0.949, 0.722)
+const LYN := Color(0.424, 0.816, 1.000)
+const SKJOLD := Color(0.718, 0.612, 1.000)
+## Token kind -> GLB, disc mesh name, disc colour (DESIGN 2a, 7a).
+const TOKEN_ART: Dictionary = {
+	"snegl": ["res://assets/models/token_snegl.glb", "token_snegl", SNEGL],
+	"lyn": ["res://assets/models/token_lyn.glb", "token_lyn", LYN],
+	"skjold": ["res://assets/models/token_skjold.glb", "token_skjold", SKJOLD],
+}
 const WHITE := Color(1.0, 1.0, 1.0)
 const BALL_Z: float = 0.32
 const CRYSTAL_TINTS: Array[Color] = [
@@ -30,12 +40,17 @@ const CRYSTAL_TINTS: Array[Color] = [
 ]
 const TRAIL_POINTS: int = 12
 const TRAIL_LEN_PX: float = 130.0
-const BALL_POOL: int = 8
-const TOKEN_POOL: int = 2
+## Up to 14 balls (Vanlig L28-30); Uendelig caps at 13.
+const BALL_POOL: int = 14
 const RIM_PX: float = 5.0
 ## crystal_tile.glb is 0.70 m wide; scale it to cover the 0.72 m cell so
-## the grid under the glass never shows between tiles.
+## the grid under the glass never shows between tiles. On the 48 px grid
+## every per-cell mesh is scaled by cell / 72 on top.
 const TILE_FILL: float = 1.03
+const REF_CELL: float = 72.0
+const STONE_POOL: int = 64
+const MIRROR_POOL: int = 12
+const OUT_POOL: int = 160
 
 var camera: Camera3D
 var cam_pivot: Node3D
@@ -64,11 +79,25 @@ var _cry_animating: bool = false
 var _cry_hide: float = 0.0
 var _ice_mmi: MultiMeshInstance3D
 var _stone_mmi: MultiMeshInstance3D
+var _mirror_mmi: MultiMeshInstance3D
+var _mirror_face_mmi: MultiMeshInstance3D
+var _mirror_face_xf: Transform3D = Transform3D.IDENTITY
+var _out_mmi: MultiMeshInstance3D
+## Grid of the bound level (OfSim.cols / rows / cell).
+var _cols: int = 14
+var _rows: int = 16
+var _cell: float = 72.0
+var _k: float = 1.0
+var _world: int = 1
+var _sky_card: MeshInstance3D
+var _planet_card: MeshInstance3D
+var _moon_card: MeshInstance3D
 var _rim: MeshInstance3D
 var _rim_mat: ShaderMaterial
 var _glass_mat: ShaderMaterial
 
 var _balls: Array[Node3D] = []
+var _rings2: Array[MeshInstance3D] = []
 var _ball_halo_mats: Array[ShaderMaterial] = []
 var _snegl_quads: Array[MeshInstance3D] = []
 var _snegl_mat: ShaderMaterial
@@ -86,6 +115,7 @@ var _ring_burst_t: float = 99.0
 
 var _tokens: Array[Node3D] = []
 var _token_cells: Array[Vector2i] = []
+var _token_scenes: Dictionary = {}
 
 var _reveal_all_t: float = -1.0
 var _frozen: bool = false
@@ -216,25 +246,47 @@ func _card(
 ## ocean planet at -125 m (limb near screen y 1530), the moon at -60 m upper
 ## right. Sizes follow the projection from the camera at 30 m.
 func _build_backdrop() -> void:
-	_card(
+	_sky_card = _card(
 		"res://assets/textures/world1_sky.png",
 		Vector2(96.0, 170.7),
 		Vector3(0.0, 19.0, -150.0),
 		BaseMaterial3D.TRANSPARENCY_DISABLED
 	)
-	_card(
+	_planet_card = _card(
 		"res://assets/textures/world1_planet.png",
 		Vector2(167.0, 167.0),
 		Vector3(-4.65, -97.35, -125.0),
 		BaseMaterial3D.TRANSPARENCY_ALPHA
 	)
-	_card(
+	_moon_card = _card(
 		"res://assets/textures/world1_moon.png",
 		Vector2(9.4, 9.4),
 		Vector3(7.8, 24.3, -60.0),
 		BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR,
 		0.72
 	)
+
+
+## World backdrop and crystal tint (DESIGN 2c). Only world 1 has its own
+## art; worlds 2-6 are a PLACEHOLDER: the world 1 sky and planet tinted
+## toward the world's sky ramp, no moon, until graphic-designer delivers
+## world2..6 sky / planet cards.
+func set_world(w: int) -> void:
+	_world = clampi(w, 1, OfBalance.WORLDS)
+	var wd: Dictionary = OfLevels.world(_world)
+	var tint: Color = wd["tint"]
+	_crystal_mat.set_shader_parameter("tint", tint)
+	var own_art: bool = OfLevels.WORLD_ART_DONE.has(_world)
+	var sky_tint := Color(1, 1, 1)
+	var planet_tint := Color(1, 1, 1)
+	if not own_art:
+		var ramp: Array = wd["sky"]
+		var neb: Color = ramp[1]
+		sky_tint = Color(1, 1, 1).lerp(neb * 2.2, 0.55)
+		planet_tint = Color(1, 1, 1).lerp(tint, 0.6)
+	(_sky_card.material_override as StandardMaterial3D).albedo_color = sky_tint
+	(_planet_card.material_override as StandardMaterial3D).albedo_color = planet_tint
+	_moon_card.visible = own_art
 
 
 func _build_frame() -> void:
@@ -331,16 +383,17 @@ func _build_field() -> void:
 	_crystal_mat = ShaderMaterial.new()
 	_crystal_mat.shader = preload("res://shaders/crystal.gdshader")
 	_crystal_mat.set_shader_parameter("tint", CRYSTAL_W1)
-	_crystal_mmi = _mm_instance(_crystal_mesh, _crystal_mat, OfSim.COLS * OfSim.ROWS, true)
+	# Crystal MultiMesh sized for the biggest grid (21 x 24 = 504).
+	_crystal_mmi = _mm_instance(_crystal_mesh, _crystal_mat, OfBalance.MAX_CELLS, true)
 	_game_nodes.append(_crystal_mmi)
-	_cry_state.resize(OfSim.COLS * OfSim.ROWS)
-	_cry_t.resize(OfSim.COLS * OfSim.ROWS)
-	# Ice bars.
+	_cry_state.resize(OfBalance.MAX_CELLS)
+	_cry_t.resize(OfBalance.MAX_CELLS)
+	# Ice bars: a 72 px quad, scaled per grid.
 	var iq := QuadMesh.new()
-	iq.size = Vector2(OfBalance.CELL, OfBalance.CELL) * PX
+	iq.size = Vector2(REF_CELL, REF_CELL) * PX
 	var ice_mat := ShaderMaterial.new()
 	ice_mat.shader = preload("res://shaders/ice.gdshader")
-	_ice_mmi = _mm_instance(iq, ice_mat, OfSim.COLS * OfSim.ROWS)
+	_ice_mmi = _mm_instance(iq, ice_mat, OfBalance.MAX_CELLS)
 	_game_nodes.append(_ice_mmi)
 	# Stones.
 	var sps: PackedScene = load("res://assets/models/stone_block.glb")
@@ -348,9 +401,32 @@ func _build_field() -> void:
 	var stone_mat := StandardMaterial3D.new()
 	stone_mat.albedo_color = STONE
 	stone_mat.roughness = 0.85
-	_stone_mmi = _mm_instance(_find_mesh(sroot, "stone_block").mesh, stone_mat, 32)
+	_stone_mmi = _mm_instance(_find_mesh(sroot, "stone_block").mesh, stone_mat, STONE_POOL)
 	sroot.free()
 	_game_nodes.append(_stone_mmi)
+	# Mirrors (DESIGN 7a): stone body + bright diagonal face.
+	var mps: PackedScene = load("res://assets/models/mirror_block.glb")
+	var mroot: Node = mps.instantiate()
+	var face_mi: MeshInstance3D = _find_mesh(mroot, "mirror_face")
+	_mirror_face_xf = face_mi.transform
+	_mirror_mmi = _mm_instance(_find_mesh(mroot, "stone_block").mesh, stone_mat, MIRROR_POOL)
+	var mface_mat := StandardMaterial3D.new()
+	mface_mat.albedo_color = MIRROR_FACE
+	mface_mat.metallic = 1.0
+	mface_mat.roughness = 0.03
+	mface_mat.emission_enabled = true
+	mface_mat.emission = Color(0.749, 0.957, 1.0)
+	mface_mat.emission_energy_multiplier = 2.5
+	_mirror_face_mmi = _mm_instance(face_mi.mesh, mface_mat, MIRROR_POOL)
+	mroot.free()
+	_game_nodes.append(_mirror_mmi)
+	_game_nodes.append(_mirror_face_mmi)
+	# Cells outside a shaped field: rail-coloured plates over the glass.
+	var oq := QuadMesh.new()
+	oq.size = Vector2(REF_CELL, REF_CELL) * PX
+	var out_mat := _unshaded(RAIL.darkened(0.25))
+	_out_mmi = _mm_instance(oq, out_mat, OUT_POOL)
+	_game_nodes.append(_out_mmi)
 	# Rim lines.
 	_rim = MeshInstance3D.new()
 	_rim_mat = ShaderMaterial.new()
@@ -396,6 +472,19 @@ func _build_actors() -> void:
 		ring.material_override = ring_mat
 		ring.rotation = Vector3(deg_to_rad(24.0), 0.0, deg_to_rad(-14.0))
 		root.add_child(ring)
+		# Stor: a second ring (shape cue "double ring", DESIGN 7b).
+		var ring2 := MeshInstance3D.new()
+		var tm2 := TorusMesh.new()
+		tm2.inner_radius = 0.42
+		tm2.outer_radius = 0.465
+		tm2.rings = 24
+		tm2.ring_segments = 6
+		ring2.mesh = tm2
+		ring2.material_override = ring_mat
+		ring2.rotation = Vector3(deg_to_rad(-30.0), 0.0, deg_to_rad(20.0))
+		ring2.visible = false
+		root.add_child(ring2)
+		_rings2.append(ring2)
 		var halo := _glow_quad(1.2, ORB_SHELL, 0, 0.9)
 		halo.position = Vector3(0.0, 0.0, -0.3)
 		root.add_child(halo)
@@ -441,21 +530,27 @@ func _build_actors() -> void:
 	_origin_ring_mat = _origin_ring.material_override as ShaderMaterial
 	_origin_ring.visible = false
 	add_child(_origin_ring)
-	# Tokens.
-	var tps: PackedScene = load("res://assets/models/token_snegl.glb")
-	for i: int in TOKEN_POOL:
-		var t: Node3D = tps.instantiate()
-		for mi: MeshInstance3D in _all_meshes(t):
-			var c: Color = SNEGL * 1.05 if mi.name == "token_snegl" else Color(1.3, 1.3, 1.3)
-			mi.material_override = _unshaded(c)
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var halo := _glow_quad(1.1, SNEGL, 0, 0.45)
-		halo.position = Vector3(0.0, -0.2, 0.0)
-		halo.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
-		t.add_child(halo)
-		t.visible = false
-		add_child(t)
-		_tokens.append(t)
+	# Tokens: one pool node per kind and slot, made on demand in
+	# _place_tokens (max OfBalance.MAX_TOKENS per level).
+	for kind: String in TOKEN_ART:
+		_token_scenes[kind] = load(String(TOKEN_ART[kind][0])) as PackedScene
+
+
+func _make_token(kind: String) -> Node3D:
+	var art: Array = TOKEN_ART[kind]
+	var t: Node3D = (_token_scenes[kind] as PackedScene).instantiate()
+	var disc: Color = art[2]
+	for mi: MeshInstance3D in _all_meshes(t):
+		var c: Color = disc * 1.05 if mi.name == String(art[1]) else Color(1.3, 1.3, 1.3)
+		mi.material_override = _unshaded(c)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var halo := _glow_quad(1.1, disc, 0, 0.45)
+	halo.position = Vector3(0.0, -0.2, 0.0)
+	halo.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
+	t.add_child(halo)
+	t.set_meta(&"kind", kind)
+	add_child(t)
+	return t
 
 
 func _mm_instance(
@@ -539,15 +634,22 @@ func set_picture(tex: Texture2D) -> void:
 	_crystal_mat.set_shader_parameter("picture", tex)
 
 
-func bind_level(sim: OfSim, picture: Texture2D) -> void:
+func bind_level(sim: OfSim, picture: Texture2D, world_id: int = 1) -> void:
 	set_picture(picture)
+	set_world(world_id)
+	_cols = sim.cols
+	_rows = sim.rows
+	_cell = sim.cell
+	_k = _cell / REF_CELL
+	_glass_mat.set_shader_parameter("cells", Vector2(_cols, _rows))
+	_glass_mat.set_shader_parameter("cell_px", _cell)
 	_frozen = false
 	_reveal_all_t = -1.0
 	_cry_state.fill(0)
 	_cry_t.fill(0.0)
 	_cry_pulse = 0.0
 	_cry_hide = 0.0
-	for i: int in OfSim.COLS * OfSim.ROWS:
+	for i: int in OfBalance.MAX_CELLS:
 		_crystal_mmi.multimesh.set_instance_transform(i, _hidden_xf())
 	_rebuild_static(sim)
 	_place_stones(sim)
@@ -563,25 +665,57 @@ func _hidden_xf() -> Transform3D:
 	return Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(0.0, -50.0, 0.0))
 
 
+## Stones, mirrors and the plates over cells outside a shaped field.
 func _place_stones(sim: OfSim) -> void:
 	var n: int = 0
-	var face := Basis(Vector3.RIGHT, PI * 0.5)
-	for r: int in OfSim.ROWS:
-		for c: int in OfSim.COLS:
-			if sim.get_cell(Vector2i(c, r)) == OfSim.Cell.ROCK and n < 32:
-				var p: Vector3 = field_to_world(OfSim.cell_center(Vector2i(c, r)), 0.17)
+	var nm: int = 0
+	var no: int = 0
+	var face := Basis(Vector3.RIGHT, PI * 0.5).scaled(Vector3(_k, _k, _k))
+	# "\\" mirrors: the "/" face turned a quarter around the view axis.
+	var back := Basis(Vector3.BACK, PI * 0.5)
+	for r: int in _rows:
+		for c: int in _cols:
+			var cc := Vector2i(c, r)
+			var s: int = sim.get_cell(cc)
+			var p: Vector3 = field_to_world(sim.cell_center(cc), 0.17 * _k)
+			if s == OfSim.Cell.ROCK and n < STONE_POOL:
 				_stone_mmi.multimesh.set_instance_transform(n, Transform3D(face, p))
 				n += 1
-	for i: int in range(n, 32):
+			elif s == OfSim.Cell.MIRROR and nm < MIRROR_POOL:
+				var xf := Transform3D(face, p)
+				_mirror_mmi.multimesh.set_instance_transform(nm, xf)
+				var fxf: Transform3D = xf * _mirror_face_xf
+				if sim.mirror_at(cc) < 0:
+					fxf = Transform3D(back * fxf.basis, fxf.origin)
+				_mirror_face_mmi.multimesh.set_instance_transform(nm, fxf)
+				nm += 1
+			elif s == OfSim.Cell.OUT and no < OUT_POOL:
+				var ob := Basis.from_scale(Vector3(_k * 1.01, _k * 1.01, 1.0))
+				_out_mmi.multimesh.set_instance_transform(
+					no, Transform3D(ob, field_to_world(sim.cell_center(cc), 0.02))
+				)
+				no += 1
+	for i: int in range(n, STONE_POOL):
 		_stone_mmi.multimesh.set_instance_transform(i, _hidden_xf())
+	for i: int in range(nm, MIRROR_POOL):
+		_mirror_mmi.multimesh.set_instance_transform(i, _hidden_xf())
+		_mirror_face_mmi.multimesh.set_instance_transform(i, _hidden_xf())
+	for i: int in range(no, OUT_POOL):
+		_out_mmi.multimesh.set_instance_transform(i, _hidden_xf())
 
 
 func _place_tokens(sim: OfSim) -> void:
+	for t: Node3D in _tokens:
+		t.queue_free()
+	_tokens.clear()
 	_token_cells.clear()
 	for k: Variant in sim.tokens.keys():
+		if _token_cells.size() >= OfBalance.MAX_TOKENS:
+			break
 		_token_cells.append(k as Vector2i)
-	for i: int in _tokens.size():
-		_tokens[i].visible = i < _token_cells.size()
+		var t: Node3D = _make_token(String(sim.tokens[k]))
+		t.scale = Vector3(_k, _k, _k)
+		_tokens.append(t)
 
 
 ## Which cells draw as crystal: captured/caged cells, plus wall cells that
@@ -604,11 +738,12 @@ func _crystal_cell(sim: OfSim, c: Vector2i) -> bool:
 ## crystal start their grow-in (instant unless on_captured set a delay).
 func _rebuild_static(sim: OfSim) -> void:
 	var ice_n: int = 0
-	var face_v := Basis(Vector3.BACK, PI * 0.5)
-	for r: int in OfSim.ROWS:
-		for c: int in OfSim.COLS:
+	var sk := Basis.from_scale(Vector3(_k, _k, 1.0))
+	var face_v := Basis(Vector3.BACK, PI * 0.5) * sk
+	for r: int in _rows:
+		for c: int in _cols:
 			var cell := Vector2i(c, r)
-			var i: int = r * OfSim.COLS + c
+			var i: int = r * _cols + c
 			var cry: bool = _crystal_cell(sim, cell)
 			if cry and _cry_state[i] == 0:
 				_cry_state[i] = 1
@@ -620,11 +755,11 @@ func _rebuild_static(sim: OfSim) -> void:
 				_crystal_mmi.multimesh.set_instance_transform(i, _hidden_xf())
 			if not cry and sim.get_cell(cell) == OfSim.Cell.WALL:
 				var vertical: bool = sim.wall_dir[i] == 1
-				var b: Basis = face_v if vertical else Basis.IDENTITY
-				var p: Vector3 = field_to_world(OfSim.cell_center(cell), 0.12)
+				var b: Basis = face_v if vertical else sk
+				var p: Vector3 = field_to_world(sim.cell_center(cell), 0.12)
 				_ice_mmi.multimesh.set_instance_transform(ice_n, Transform3D(b, p))
 				ice_n += 1
-	for i: int in range(ice_n, OfSim.COLS * OfSim.ROWS):
+	for i: int in range(ice_n, OfBalance.MAX_CELLS):
 		_ice_mmi.multimesh.set_instance_transform(i, _hidden_xf())
 	_build_rim(sim)
 	_update_crystal(0.0)
@@ -633,12 +768,12 @@ func _rebuild_static(sim: OfSim) -> void:
 func _build_rim(sim: OfSim) -> void:
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
-	var cell: float = OfBalance.CELL
+	var cell: float = _cell
 	var hw: float = RIM_PX * 0.5
-	for r: int in OfSim.ROWS:
-		for c: int in OfSim.COLS:
+	for r: int in _rows:
+		for c: int in _cols:
 			var cc := Vector2i(c, r)
-			if _cry_state[r * OfSim.COLS + c] == 0:
+			if _cry_state[r * _cols + c] == 0:
 				continue
 			var x0: float = c * cell
 			var y0: float = r * cell
@@ -650,11 +785,12 @@ func _build_rim(sim: OfSim) -> void:
 			]
 			for sd: Array in sides:
 				var n: Vector2i = cc + (sd[0] as Vector2i)
-				if not OfSim.in_grid(n):
+				if not sim.in_grid(n):
 					continue
-				if _cry_state[n.y * OfSim.COLS + n.x] == 1:
+				if _cry_state[n.y * _cols + n.x] == 1:
 					continue
-				if sim.get_cell(n) == OfSim.Cell.ROCK:
+				var ns: int = sim.get_cell(n)
+				if ns == OfSim.Cell.ROCK or ns == OfSim.Cell.MIRROR or ns == OfSim.Cell.OUT:
 					continue
 				var a: Vector2 = sd[1]
 				var b: Vector2 = sd[2]
@@ -686,7 +822,7 @@ func on_captured(
 ) -> void:
 	for k: int in cells.size():
 		var c: Vector2i = cells[k]
-		var i: int = c.y * OfSim.COLS + c.x
+		var i: int = c.y * _cols + c.x
 		_cry_t[i] = 0.0 if _less_motion else -delays[k]
 	_rebuild_static(sim)
 	if pulse and not _less_motion:
@@ -700,6 +836,14 @@ func on_wall_finished(sim: OfSim) -> void:
 
 func on_wall_vanished() -> void:
 	_hide_beam()
+
+
+## Cage closed: its balls shrink to 70% and stop (drawn in _sync_balls);
+## the room turns to crystal like a capture.
+func on_caged(sim: OfSim, cells: Array[Vector2i]) -> void:
+	for c: Vector2i in cells:
+		_cry_t[c.y * _cols + c.x] = 0.0
+	_rebuild_static(sim)
 
 
 func on_token_taken(cell: Vector2i) -> void:
@@ -721,13 +865,14 @@ func on_wall_started() -> void:
 func reveal_all(sim: OfSim) -> void:
 	_frozen = true
 	_reveal_all_t = 0.0
-	for r: int in OfSim.ROWS:
-		for c: int in OfSim.COLS:
-			var i: int = r * OfSim.COLS + c
+	var mid := Vector2((_cols - 1) * 0.5, (_rows - 1) * 0.5)
+	for r: int in _rows:
+		for c: int in _cols:
+			var i: int = r * _cols + c
 			var s: int = sim.get_cell(Vector2i(c, r))
-			if _cry_state[i] == 0 and s != OfSim.Cell.ROCK and s != OfSim.Cell.MIRROR:
+			if _cry_state[i] == 0 and OfSim.counts(s):
 				_cry_state[i] = 1
-				var d: float = Vector2(c, r).distance_to(Vector2(6.5, 7.5)) / 10.0
+				var d: float = Vector2(c, r).distance_to(mid) / (10.0 * float(_cols) / 14.0)
 				_cry_t[i] = 0.0 if _less_motion else -d * (OfBalance.CLEAR_PICTURE_FADE_S - 0.15)
 	for i: int in _ice_mmi.multimesh.instance_count:
 		_ice_mmi.multimesh.set_instance_transform(i, _hidden_xf())
@@ -787,13 +932,17 @@ func _sync_balls(sim: OfSim, real_dt: float, game_dt: float) -> void:
 		var b: OfSim.Ball = sim.balls[i]
 		var wp: Vector3 = field_to_world(b.pos, BALL_Z)
 		_balls[i].position = wp
+		_rings2[i].visible = b.kind == OfSim.Kind.STOR
 		var sc: float = b.radius / OfBalance.BALL_RADIUS
+		if b.caged:
+			sc *= OfBalance.CAGED_BALL_SCALE
 		_squash_t[i] += real_dt
 		var sq: float = 1.0
 		if _squash_t[i] < 0.08:
 			sq = 0.9
 		_balls[i].scale = Vector3(sc / sq, sc * sq, sc)
 		_snegl_quads[i].visible = snegl_on
+		_trails[i].visible = not b.caged
 		var h: Array = _hist[i]
 		if game_dt > 0.0 or h.is_empty():
 			h.push_front(wp)
@@ -852,8 +1001,8 @@ func _sync_beam(sim: OfSim) -> void:
 	if w == null or _frozen:
 		_hide_beam()
 		return
-	var cell: float = OfBalance.CELL
-	var o: Vector2 = OfSim.cell_center(w.origin)
+	var cell: float = _cell
+	var o: Vector2 = sim.cell_center(w.origin)
 	var axis := Vector2(0.0, 1.0) if w.vertical else Vector2(1.0, 0.0)
 	# Visual length of each half in px from the origin centre.
 	var ext: Array[float] = [0.0, 0.0]
@@ -874,7 +1023,7 @@ func _sync_beam(sim: OfSim) -> void:
 	var len_px: float = a.distance_to(b)
 	var mid: Vector2 = (a + b) * 0.5
 	var basis := Basis(Vector3.BACK, PI * 0.5 if w.vertical else 0.0)
-	basis = basis.scaled_local(Vector3(len_px * PX, 0.64, 1.0))
+	basis = basis.scaled_local(Vector3(len_px * PX, 0.64 * _k, 1.0))
 	_beam.transform = Transform3D(basis, field_to_world(mid, 0.3))
 	_beam.visible = true
 	_beam_mat.set_shader_parameter("len_px", len_px)
@@ -885,10 +1034,11 @@ func _sync_beam(sim: OfSim) -> void:
 		var h: OfSim.Half = w.halves[k]
 		_tips[k].visible = not h.popped
 		_tips[k].position = field_to_world(ends[k], 0.34)
+		_tips[k].scale = Vector3(_k, _k, 1.0)
 	_origin_ring.visible = true
 	_origin_ring.position = field_to_world(o, 0.33)
 	var burst: float = clampf(_ring_burst_t / 0.2, 0.0, 1.0)
-	var rs: float = 1.0 if _less_motion else lerpf(1.8, 1.0, burst)
+	var rs: float = (1.0 if _less_motion else lerpf(1.8, 1.0, burst)) * _k
 	_origin_ring.scale = Vector3(rs, rs, 1.0)
 
 
@@ -902,8 +1052,8 @@ func _sync_tokens(sim: OfSim) -> void:
 			_tokens[i].visible = false
 			continue
 		var spin: float = 0.0 if _less_motion else _t * TAU * OfBalance.TOKEN_SPIN_REV_S
-		var b := Basis(Vector3.BACK, -spin) * face
-		_tokens[i].transform = Transform3D(b, field_to_world(OfSim.cell_center(c), 0.22))
+		var b := (Basis(Vector3.BACK, -spin) * face).scaled(Vector3(_k, _k, _k))
+		_tokens[i].transform = Transform3D(b, field_to_world(sim.cell_center(c), 0.22))
 
 
 ## Gentle restart: crystal and ice slide back out during the rewind.
@@ -922,7 +1072,7 @@ func _sync_restart(sim: OfSim) -> void:
 		_rim.visible = true
 		_cry_state.fill(0)
 		_cry_t.fill(0.0)
-		for i: int in OfSim.COLS * OfSim.ROWS:
+		for i: int in OfBalance.MAX_CELLS:
 			_crystal_mmi.multimesh.set_instance_transform(i, _hidden_xf())
 		_rebuild_static(sim)
 		_place_tokens(sim)
@@ -938,20 +1088,20 @@ func _update_crystal(dt: float) -> void:
 	var mm: MultiMesh = _crystal_mmi.multimesh
 	var face := Basis(Vector3.RIGHT, PI * 0.5)
 	var grow: float = OfBalance.CELL_GROW_S
-	for i: int in OfSim.COLS * OfSim.ROWS:
+	for i: int in _cols * _rows:
 		if _cry_state[i] == 0:
 			continue
 		var t: float = _cry_t[i]
 		if t < grow + 0.05:
 			_cry_t[i] = t + dt
 			still = false
-		var c := Vector2i(i % OfSim.COLS, i / OfSim.COLS)
-		var s: float = _grow_curve(t) * TILE_FILL
+		var c := Vector2i(i % _cols, i / _cols)
+		var s: float = _grow_curve(t) * TILE_FILL * _k
 		if _cry_hide > 0.0:
 			s *= 1.0 - _cry_hide
 		var turn: float = float((c.x * 7 + c.y * 13) % 4) * PI * 0.5
 		var b: Basis = (Basis(Vector3.BACK, turn) * face).scaled(Vector3(s, s, s))
-		var p: Vector3 = field_to_world(OfSim.cell_center(c), 0.0)
+		var p: Vector3 = field_to_world(Vector2((c.x + 0.5) * _cell, (c.y + 0.5) * _cell), 0.0)
 		mm.set_instance_transform(i, Transform3D(b, p))
 		var tint: Color = CRYSTAL_TINTS[(c.x * 3 + c.y * 5) % CRYSTAL_TINTS.size()]
 		mm.set_instance_color(i, tint)

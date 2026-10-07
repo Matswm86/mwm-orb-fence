@@ -17,6 +17,9 @@ const ICONS: Array[String] = ["updown", "sideside"]
 
 ## 0 = up-down, 1 = side-side.
 var chosen: int = 0
+## Lyn charges left (0-2): gold bolt notches at the top-right of both discs
+## (count by shape, DESIGN 4).
+var lyn_charges: int = 0
 var less_motion: bool = false
 var _down: Array[bool] = [false, false]
 var _press_t: Array[float] = [9.0, 9.0]
@@ -95,6 +98,15 @@ func _draw() -> void:
 			draw_circle(c, r2, fill2)
 			draw_arc(c, r2 - 2.0, 0.0, TAU, 72, HUD_EDGE, 4.0, true)
 			_outline_arrow(ICONS[i], c, r2 * 0.62, Color(WHITE, 0.8))
+		_draw_lyn_notches(c)
+
+
+func _draw_lyn_notches(c: Vector2) -> void:
+	for n: int in lyn_charges:
+		var p: Vector2 = c + Vector2(70.0 + 34.0 * float(n), -84.0)
+		draw_circle(p, 17.0, INK)
+		draw_circle(p, 14.0, GOLD)
+		draw_polyline(OfFieldFx.bolt_points(p, 9.0), INK, 3.5, true)
 
 
 ## Outline version of the double arrow for the unchosen disc: the same

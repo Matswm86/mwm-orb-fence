@@ -51,6 +51,8 @@ func _ready() -> void:
 	map = OfMapScreen.new()
 	center_frame.add_child(map)
 	map.level_chosen.connect(open_level)
+	map.endless_chosen.connect(open_endless)
+	map.page_changed.connect(world.set_world)
 	map.settings_pressed.connect(_open_settings)
 	play = OfPlay.new()
 	add_child(play)
@@ -151,6 +153,15 @@ func open_level(id: int) -> void:
 	settings.visible = false
 	map.visible = false
 	play.start_level(id)
+	_apply_settings()
+
+
+## Uendelig: a new run from round 1 (GDD 6.5).
+func open_endless() -> void:
+	screen = "play"
+	settings.visible = false
+	map.visible = false
+	play.start_endless(1)
 	_apply_settings()
 
 
